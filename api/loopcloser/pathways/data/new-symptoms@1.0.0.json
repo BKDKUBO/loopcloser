@@ -1,0 +1,28 @@
+{
+  "id": "new-symptoms",
+  "version": "1.0.0",
+  "name": "New symptoms during follow-up",
+  "scope": "SHOULD",
+  "trigger": {
+    "screening_types": [
+      "symptom"
+    ],
+    "results": [
+      "*"
+    ],
+    "severities": [
+      "*"
+    ]
+  },
+  "next_action": "Red-flag screen by a human. Automation pauses until a human resolves it.",
+  "default_deadline_days": 1,
+  "red_flag_route": true,
+  "sources": [
+    "https://www.ahrq.gov/diagnostic-safety/research/closed-loop.html",
+    "https://psnet.ahrq.gov/issue/advancing-safety-closed-loop-communication-test-results"
+  ],
+  "parameters": {},
+  "notes": "",
+  "signoff_status": "pending_clinical_signoff",
+  "deadline_label": "configurable default, pending clinical review"
+}

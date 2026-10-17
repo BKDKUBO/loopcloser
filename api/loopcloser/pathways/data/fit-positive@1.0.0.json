@@ -1,0 +1,30 @@
+{
+  "id": "fit-positive",
+  "version": "1.0.0",
+  "name": "Positive stool test (FIT)",
+  "scope": "MUST",
+  "trigger": {
+    "screening_types": [
+      "fit"
+    ],
+    "results": [
+      "positive"
+    ],
+    "severities": [
+      "*"
+    ]
+  },
+  "next_action": "Refer for colonoscopy (not a repeat FIT)",
+  "default_deadline_days": 30,
+  "sources": [
+    "https://gastro.org/clinical-guidance/fecal-immunochemical-testing-fit-to-screen-for-colorectal-neoplasia/",
+    "https://www.gastrojournal.org/article/S0016-5085(21)03732-X/fulltext",
+    "https://www.cghjournal.org/article/S1542-3565(20)31378-1/fulltext",
+    "https://www.uspreventiveservicestaskforce.org/uspstf/recommendation/colorectal-cancer-screening"
+  ],
+  "red_flag_route": false,
+  "parameters": {},
+  "notes": "",
+  "signoff_status": "pending_clinical_signoff",
+  "deadline_label": "configurable default, pending clinical review"
+}

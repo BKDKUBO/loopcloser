@@ -1,0 +1,11 @@
+.venv
+__pycache__
+tests
+.pytest_cache
+.ruff_cache
+web
+firestore-tests
+data
+docs
+.git
+**/node_modules

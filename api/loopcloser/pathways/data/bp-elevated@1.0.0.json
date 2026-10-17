@@ -1,0 +1,34 @@
+{
+  "id": "bp-elevated",
+  "version": "1.0.0",
+  "name": "Elevated blood pressure",
+  "scope": "MUST",
+  "trigger": {
+    "screening_types": [
+      "bp"
+    ],
+    "results": [
+      "elevated"
+    ],
+    "severities": [
+      "*"
+    ]
+  },
+  "next_action": "Repeat the measurement on another day. Hypertension is confirmed at 140 and/or 90 mmHg or higher on two different days. Very high readings or symptoms go to the red-flag route.",
+  "default_deadline_days": 7,
+  "parameters": {
+    "confirm_systolic_mmhg": 140,
+    "confirm_diastolic_mmhg": 90,
+    "confirm_on_different_days": 2,
+    "very_high_threshold": null,
+    "very_high_threshold_note": "Not set. Pending clinical review. Until then a red flag comes from the uploader, the patient or staff."
+  },
+  "sources": [
+    "https://www.who.int/news-room/fact-sheets/detail/hypertension",
+    "https://www.who.int/publications/i/item/9789240033986"
+  ],
+  "red_flag_route": false,
+  "notes": "",
+  "signoff_status": "pending_clinical_signoff",
+  "deadline_label": "configurable default, pending clinical review"
+}

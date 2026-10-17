@@ -1,0 +1,63 @@
+# Cloud Run service for the API. Applied by deploy/deploy.sh or the Deploy workflow:
+#   gcloud run services replace deploy/api-service.yaml --region asia-southeast1
+# Placeholders ${PROJECT_ID} and ${IMAGE} are filled in with envsubst.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: loopcloser-api
+  labels:
+    app: loopcloser
+spec:
+  template:
+    metadata:
+      annotations:
+        # Traffic: scale to zero when idle (no cost), cap instances to bound spend.
+        autoscaling.knative.dev/minScale: "0"
+        autoscaling.knative.dev/maxScale: "5"
+        run.googleapis.com/cpu-throttling: "true"
+        run.googleapis.com/startup-cpu-boost: "true"
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 60
+      # Least-privilege identity: Firestore user + access to one secret only.
+      serviceAccountName: loopcloser-api@${PROJECT_ID}.iam.gserviceaccount.com
+      containers:
+        - image: ${IMAGE}
+          ports:
+            - containerPort: 8080
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          env:
+            - name: APP_ENV
+              value: production
+            - name: AUTH_MODE
+              value: firebase
+            - name: STORAGE_BACKEND
+              value: firestore
+            - name: FIRESTORE_DATABASE
+              value: loopcloser
+            - name: GOOGLE_CLOUD_PROJECT
+              value: ${PROJECT_ID}
+            - name: CORS_ORIGINS
+              value: https://loopcloser.web.app,https://loopcloser.firebaseapp.com
+            - name: RATE_LIMIT_PER_MINUTE
+              value: "120"
+            - name: RATE_LIMIT_SENSITIVE_PER_MINUTE
+              value: "10"
+            # Secret Manager only. Never put the key in env files, images or the repo.
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: loopcloser-gemini-api-key
+                  key: latest
+          startupProbe:
+            httpGet:
+              path: /health
+            periodSeconds: 3
+            failureThreshold: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+            periodSeconds: 30

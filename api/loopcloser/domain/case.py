@@ -1,0 +1,150 @@
+"""Case projection: fold the event log into the current view of a case.
+
+The projection is a cache. It can always be rebuilt from events, and tests check
+that a stored projection equals a fresh rebuild.
+"""
+
+from __future__ import annotations
+
+from datetime import date, datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+from .events import Event, EventType
+from .states import CaseState
+
+
+class CaseView(BaseModel):
+    id: str
+    participant_id: str
+    screening_id: str
+    screening_type: str
+    severity: str
+    pathway_id: str
+    pathway_version: str
+    pathway_signoff_status: str
+    state: CaseState = CaseState.NEW_RESULT
+    previous_state: CaseState | None = None
+    clinical_urgency: str = "standard"  # "urgent" | "standard". From the upload and red flags, never from AI.
+    # Ownership (PLAN_FINAL.md section 4)
+    owner: str | None = None
+    backup_owner: str | None = None
+    clinician_reviewer: str | None = None
+    next_action: str | None = None
+    due_date: date | None = None
+    escalation_level: int = 0
+    contact_attempts: int = 0
+    failed_contact_attempts: int = 0
+    last_contact_attempt: datetime | None = None
+    closure_reason: str | None = None
+    closure_evidence: str | None = None
+    signed_off_by: str | None = None
+    # Safety
+    automation_paused: bool = False
+    red_flag_open: bool = False
+    # Bookkeeping
+    patient_uid: str | None = None  # Firebase uid of the patient, when linked. Used by Firestore rules.
+    synthetic: bool = False
+    data_label: str | None = None  # "SIMULATED" for generated data
+    opened_at: datetime | None = None
+    updated_at: datetime | None = None
+    version: int = 0  # seq of the last applied event
+    data_quality: list[str] = Field(default_factory=list)
+
+    def to_doc(self) -> dict[str, Any]:
+        return self.model_dump(mode="json")
+
+
+def _apply(view: CaseView | None, ev: Event) -> CaseView:
+    p = ev.payload
+    if ev.type == EventType.CASE_OPENED:
+        if view is not None:
+            raise ValueError("case_opened must be the first event")
+        return CaseView(
+            id=ev.case_id,
+            participant_id=p["participant_id"],
+            screening_id=p["screening_id"],
+            screening_type=p["screening_type"],
+            severity=p["severity"],
+            pathway_id=p["pathway_id"],
+            pathway_version=p["pathway_version"],
+            pathway_signoff_status=p["pathway_signoff_status"],
+            clinical_urgency=p.get("clinical_urgency", "standard"),
+            next_action=p.get("next_action"),
+            due_date=p.get("due_date"),
+            owner=p.get("owner"),
+            patient_uid=p.get("patient_uid"),
+            synthetic=bool(p.get("synthetic", False)),
+            data_label=p.get("data_label"),
+            opened_at=ev.at,
+            updated_at=ev.at,
+            version=ev.seq,
+        )
+    if view is None:
+        raise ValueError("first event must be case_opened")
+
+    v = view.model_copy(deep=True)
+    if ev.type == EventType.OWNER_ASSIGNED:
+        for f in ("owner", "backup_owner", "clinician_reviewer"):
+            if f in p:
+                setattr(v, f, p[f])
+    elif ev.type == EventType.STATE_CHANGED:
+        v.previous_state = CaseState(p["from"])
+        v.state = CaseState(p["to"])
+        if v.state == CaseState.ESCALATED:
+            v.escalation_level += 1
+        if "next_action" in p:
+            v.next_action = p["next_action"]
+        if "due_date" in p:
+            v.due_date = p["due_date"]
+        if v.state == CaseState.RESOLVED_BY_HUMAN:
+            v.red_flag_open = False
+    elif ev.type == EventType.CONTACT_ATTEMPT:
+        v.contact_attempts += 1
+        if p.get("result") != "reached":
+            v.failed_contact_attempts += 1
+        v.last_contact_attempt = ev.at
+    elif ev.type == EventType.RED_FLAG_REPORTED:
+        v.red_flag_open = True
+        v.automation_paused = True
+        v.clinical_urgency = "urgent"
+        if p.get("state_change", True):
+            v.previous_state = v.state
+            v.state = CaseState.RED_FLAG_REPORTED
+    elif ev.type == EventType.AUTOMATION_RESUMED:
+        v.automation_paused = False
+    elif ev.type == EventType.CASE_CLOSED:
+        v.previous_state = v.state
+        v.state = CaseState.CLOSED
+        v.closure_reason = p["closure_reason"]
+        v.closure_evidence = p.get("evidence_ref")
+        v.signed_off_by = p.get("signed_off_by")
+    # NOTIFICATION_STATUS and NOTE_ADDED never change state on their own.
+    v.updated_at = ev.at
+    v.version = ev.seq
+    return v
+
+
+def _data_quality(v: CaseView) -> list[str]:
+    issues = []
+    if v.state != CaseState.CLOSED and not v.owner:
+        issues.append("no_owner")
+    if v.clinical_urgency == "urgent" and not v.owner:
+        issues.append("urgent_without_owner")
+    return issues
+
+
+def project(events: list[Event]) -> CaseView:
+    if not events:
+        raise ValueError("no events")
+    view: CaseView | None = None
+    expected = 1
+    for ev in sorted(events, key=lambda e: e.seq):
+        if ev.seq != expected:
+            raise ValueError(f"event log gap: expected seq {expected}, got {ev.seq}")
+        view = _apply(view, ev)
+        expected += 1
+    assert view is not None
+    view.data_quality = _data_quality(view)
+    return view

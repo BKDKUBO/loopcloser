@@ -1,0 +1,28 @@
+{
+  "id": "borderline",
+  "version": "1.0.0",
+  "name": "Borderline result",
+  "scope": "MUST",
+  "trigger": {
+    "screening_types": [
+      "*"
+    ],
+    "results": [
+      "*"
+    ],
+    "severities": [
+      "borderline"
+    ]
+  },
+  "next_action": "Repeat screening plus education, with a scheduled reminder (interval depends on test type)",
+  "default_deadline_days": 90,
+  "sources": [
+    "https://www.ahrq.gov/diagnostic-safety/research/closed-loop.html",
+    "https://psnet.ahrq.gov/issue/advancing-safety-closed-loop-communication-test-results"
+  ],
+  "notes": "Repeat interval is per test type and must be set by a clinician.",
+  "red_flag_route": false,
+  "parameters": {},
+  "signoff_status": "pending_clinical_signoff",
+  "deadline_label": "configurable default, pending clinical review"
+}

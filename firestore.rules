@@ -1,0 +1,51 @@
+rules_version = '2';
+
+// LoopCloser Firestore security rules.
+// The API (Firebase Admin SDK on Cloud Run) is the only writer. Clients can only
+// read what their role allows. Roles come from the Firebase Auth custom claim "role".
+// The event log is append-only and server-side only: no client create, update or delete.
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function role() { return signedIn() && ('role' in request.auth.token) ? request.auth.token.role : ''; }
+    function readsAllCases() { return role() in ['coordinator', 'supervisor', 'program_manager']; }
+    function assignedTo(c) {
+      return role() == 'worker' && (c.owner == request.auth.uid || c.backup_owner == request.auth.uid);
+    }
+    function ownCase(c) {
+      return role() == 'patient' && c.patient_uid != null && c.patient_uid == request.auth.uid;
+    }
+
+    match /cases/{caseId} {
+      allow read: if readsAllCases() || assignedTo(resource.data) || ownCase(resource.data);
+      allow write: if false;
+
+      match /events/{eventId} {
+        // Patients never read the raw log (it holds staff notes).
+        allow read: if readsAllCases()
+          || assignedTo(get(/databases/$(database)/documents/cases/$(caseId)).data);
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /audit_events/{id} {
+      allow read: if role() in ['supervisor', 'program_manager'];
+      allow write: if false;
+    }
+
+    match /pathways/{id} {
+      allow read: if role() in ['worker', 'coordinator', 'supervisor', 'program_manager'];
+      allow write: if false;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // Deny everything else.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
