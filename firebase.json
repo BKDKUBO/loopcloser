@@ -1,6 +1,5 @@
 {
   "hosting": {
-    "site": "loopcloser",
     "public": "web/out",
     "cleanUrls": true,
     "trailingSlash": false,
@@ -36,7 +35,7 @@
     ]
   },
   "firestore": {
-    "database": "loopcloser",
+    "database": "(default)",
     "location": "asia-southeast1",
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"

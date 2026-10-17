@@ -2,11 +2,11 @@
 
 Not set up yet. These steps run at deploy time (week 2), after the team approves the costs.
 
-1. **Point-in-time recovery (PITR).** `deploy/deploy.sh` creates the `loopcloser` database with
+1. **Point-in-time recovery (PITR).** `deploy/deploy.sh` creates the `(default)` database in the LoopCloser project with
    `--enable-pitr`. That keeps 7 days of versions, so a bad write can be read back from any minute in that window.
 2. **Scheduled backups.** Daily backup, kept 14 days:
    ```
-   gcloud firestore backups schedules create --database=loopcloser --recurrence=daily --retention=14d
+   gcloud firestore backups schedules create --database="(default)" --recurrence=daily --retention=14d
    ```
 3. **Restore drill** (do it once before the demo):
    ```

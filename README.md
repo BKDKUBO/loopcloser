@@ -27,7 +27,7 @@ Firebase Hosting (CDN, cache headers, security headers)
                                                    ├── pathways/ (versioned JSON + LOCK.json)
                                                    ├── ai/assist.py (Gemini, draft text only)
                                                    ▼
-                                     Firestore (database "loopcloser")
+                                     Firestore ((default) database)
                                        cases/{id}            projection (rebuildable)
                                        cases/{id}/events/{n} append-only event log (source of truth)
 Secret Manager ──► GEMINI_API_KEY injected into Cloud Run at runtime
@@ -35,8 +35,11 @@ Cloud Logging / Error Reporting ◄── JSON logs with request ids and stack t
 ```
 
 Same stack as InvoiceSentinel (Next.js, FastAPI on Cloud Run, Firebase Hosting, Firestore, Gemini,
-Secret Manager). One change: the web app is a static export served from the Hosting CDN, so it costs
-nothing at idle and the API is same-origin.
+Secret Manager), but in **its own Google Cloud project** (`loopcloser-bkdkubo`, set once in
+[deploy/project.env](deploy/project.env)). Nothing is shared with the InvoiceSentinel project, and the
+deploy scripts and CI refuse its id. The web app is a static export served from the Hosting CDN, so it
+costs nothing at idle and the API is same-origin. See [docs/gcp-project.md](docs/gcp-project.md) for
+project setup, billing and cost.
 
 ### Core data model
 - **Case state machine** (`api/loopcloser/domain/states.py`): main path *New result → Reviewed →
@@ -101,8 +104,10 @@ Status: ✅ done in code and tested · 🟡 configured, applied at deploy · ⬜
 - ✅ GitHub Actions CI: ruff lint and format, pytest, ESLint, TypeScript, vitest, Next build,
   Firestore emulator tests, secret scan (`.github/workflows/ci.yml`)
 - 🟡 Deploy workflow, manual trigger, Workload Identity Federation (no JSON keys) (`deploy.yml`)
-- 🟡 `deploy/deploy.sh` (dry run by default) and `deploy/api-service.yaml`
-- ⬜ First deploy (week 2, after cost approval)
+- 🟡 `deploy/create-project.sh` (one-time project setup) and `deploy/deploy.sh`, both dry run by default,
+  plus `deploy/api-service.yaml`; project id in one file, `deploy/project.env`
+- ✅ CI fails if the InvoiceSentinel project id appears anywhere
+- ⬜ Create the project and first deploy (week 2, after approval)
 
 ### 3. Speed
 - ✅ Static export served by the Firebase Hosting CDN; `/_next/static` cached for a year (immutable),
@@ -134,6 +139,6 @@ api/            FastAPI app (loopcloser/), tests/, Dockerfile, scripts/set_role.
 web/            Next.js static app (Today view, case timeline, pathways, status)
 firestore-tests/ security rules tests (emulator)
 firestore.rules, firestore.indexes.json, firebase.json
-deploy/         Cloud Run service, Cloud Build, deploy script (dry run by default)
+deploy/         project.env, project setup + deploy scripts (dry run by default), Cloud Run service
 docs/           guard rules, backup plan, simulation assumptions
 ```

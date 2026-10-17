@@ -1,6 +1,6 @@
 """Firestore repository.
 
-Layout (one named database per app, e.g. "loopcloser"):
+Layout (the (default) database of LoopCloser's own project, which gets the free tier):
   cases/{caseId}                 projection (rebuildable cache, read by the web app)
   cases/{caseId}/events/{seq}    append-only event log, the source of truth
 
@@ -27,7 +27,7 @@ def _db():
 
         _client = firestore.Client(
             project=os.getenv("GOOGLE_CLOUD_PROJECT") or None,
-            database=os.getenv("FIRESTORE_DATABASE", "loopcloser"),
+            database=os.getenv("FIRESTORE_DATABASE", "(default)"),
         )
     return _client
 

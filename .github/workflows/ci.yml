@@ -57,5 +57,10 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with: { fetch-depth: 0 }
+      - name: LoopCloser never targets the InvoiceSentinel project
+        run: |
+          if git grep -n "gen-lang-client-0252871691" -- . ':!deploy/project.env' ':!.github/workflows/ci.yml'; then
+            echo "Found the InvoiceSentinel project id. LoopCloser must use its own project (deploy/project.env)."; exit 1
+          fi
       - name: gitleaks
         run: docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:latest detect --source /repo --redact -v

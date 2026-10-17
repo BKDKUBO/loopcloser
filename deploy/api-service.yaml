@@ -1,6 +1,7 @@
 # Cloud Run service for the API. Applied by deploy/deploy.sh or the Deploy workflow:
 #   gcloud run services replace deploy/api-service.yaml --region asia-southeast1
-# Placeholders ${PROJECT_ID} and ${IMAGE} are filled in with envsubst.
+# Placeholders ${PROJECT_ID}, ${IMAGE} and ${WEB_ORIGIN} are filled in with envsubst
+# (values from deploy/project.env, LoopCloser's own project).
 apiVersion: serving.knative.dev/v1
 kind: Service
 metadata:
@@ -37,11 +38,11 @@ spec:
             - name: STORAGE_BACKEND
               value: firestore
             - name: FIRESTORE_DATABASE
-              value: loopcloser
+              value: "(default)"
             - name: GOOGLE_CLOUD_PROJECT
               value: ${PROJECT_ID}
             - name: CORS_ORIGINS
-              value: https://loopcloser.web.app,https://loopcloser.firebaseapp.com
+              value: ${WEB_ORIGIN},https://${PROJECT_ID}.firebaseapp.com
             - name: RATE_LIMIT_PER_MINUTE
               value: "120"
             - name: RATE_LIMIT_SENSITIVE_PER_MINUTE

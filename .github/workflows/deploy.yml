@@ -1,6 +1,8 @@
 name: Deploy
 # Manual only. Needs Workload Identity Federation (no JSON keys in GitHub):
-#   repo variables GCP_PROJECT_ID, GCP_WIF_PROVIDER, GCP_DEPLOY_SA
+#   repo variables GCP_WIF_PROVIDER, GCP_DEPLOY_SA, and optionally GCP_PROJECT_ID.
+# The project defaults to deploy/project.env (LoopCloser's own project). The script refuses the
+# InvoiceSentinel project.
 on:
   workflow_dispatch:
 permissions:
