@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One-time setup of LoopCloser's own Google Cloud + Firebase project.
-# NOT run yet. Dry run by default. Linking billing is needed for Cloud Run.
+# Already run once on Oct 17, 2026 for loopcloser-bkdkubo. Kept for re-creating the setup. Dry run by default. Linking billing is needed for Cloud Run.
 # Run only after approval: CONFIRM=yes BILLING_ACCOUNT=XXXXXX-XXXXXX-XXXXXX deploy/create-project.sh
 set -euo pipefail
 source "$(dirname "$0")/common.sh"
@@ -22,7 +22,11 @@ fi
 
 gcloud projects create "$PROJECT_ID" --organization "$ORG_ID" --name "LoopCloser"
 gcloud billing projects link "$PROJECT_ID" --billing-account "$BILLING_ACCOUNT"
-firebase projects:addfirebase "$PROJECT_ID"
+# firebase projects:addfirebase needs a Firebase CLI login; the REST call works with the gcloud login.
+curl -sf -X POST -H "Authorization: Bearer $(gcloud auth print-access-token)" -H "x-goog-user-project: $PROJECT_ID" \
+  -H "content-type: application/json" -d '{}' "https://firebase.googleapis.com/v1beta1/projects/${PROJECT_ID}:addFirebase"
+gcloud firestore databases create --database="(default)" --location="$REGION" --type=firestore-native --enable-pitr
+gcloud firestore backups schedules create --database="(default)" --recurrence=daily --retention=14d
 gcloud services enable secretmanager.googleapis.com billingbudgets.googleapis.com
 echo "Paste the Gemini API key, then Ctrl-D:"
 gcloud secrets create loopcloser-gemini-api-key --replication-policy automatic --data-file=-

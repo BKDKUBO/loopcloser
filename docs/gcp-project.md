@@ -4,7 +4,16 @@ LoopCloser uses its **own** project, separate from InvoiceSentinel. The id is se
 `deploy/project.env` (placeholder `loopcloser-bkdkubo`). Project ids are global, so if that id is taken
 when we create it, pick another (e.g. `loopcloser-bkdkubo-2026`) and change only that file and `.firebaserc`.
 
-Status (checked Oct 17, 2026): **not created yet.** No project, billing link or resources exist.
+Status (Oct 17, 2026, 1:31 PM Manila time): **project created, app not deployed.**
+- Project `loopcloser-bkdkubo` (number 386587565763) under mmocanaiii-org, billing linked to "My Billing Account"
+- Firebase added (default Hosting site `loopcloser-bkdkubo`)
+- APIs enabled: Cloud Run, Artifact Registry, Cloud Build, Firestore, Secret Manager, Billing Budgets,
+  Firebase, Firebase Hosting, Firebase Rules, Identity Toolkit (Firebase Auth), IAM, Logging, Error Reporting
+- Firestore `(default)` in asia-southeast1 with point-in-time recovery (7 days) and daily backups kept 14 days
+- Secret `loopcloser-gemini-api-key` (version 1)
+- Budget "LoopCloser": US$5/month, alerts at 50%, 90%, 100%
+- Not done yet: service account, Artifact Registry repo, Cloud Run, Hosting deploy, Firebase web app
+  registration and sign-in providers (all part of the deploy step)
 
 ## What creating it takes
 `deploy/create-project.sh` (dry run unless `CONFIRM=yes`):
