@@ -14,9 +14,19 @@ or POST /api/demo/seed.
 from __future__ import annotations
 
 import argparse
+import re
 import sys
+from pathlib import Path
 
-FORBIDDEN = {"gen-lang-client-0252871691"}  # InvoiceSentinel
+PROJECT_ENV = Path(__file__).resolve().parents[2] / "deploy" / "project.env"
+
+
+def _allowed_project() -> str:
+    """Only the LoopCloser project named in deploy/project.env may be reset."""
+    m = re.search(r'^PROJECT_ID="?([a-z0-9-]+)"?', PROJECT_ENV.read_text(), re.M)
+    if not m:
+        raise SystemExit("deploy/project.env has no PROJECT_ID")
+    return m.group(1)
 
 
 def main() -> int:
@@ -25,8 +35,8 @@ def main() -> int:
     ap.add_argument("--database", default="(default)")
     ap.add_argument("--yes", action="store_true", help="actually delete (otherwise only count)")
     a = ap.parse_args()
-    if a.project in FORBIDDEN:
-        print("Refusing: that is not the LoopCloser project.", file=sys.stderr)
+    if a.project != _allowed_project():
+        print(f"Refusing: only {_allowed_project()} (deploy/project.env) can be reset.", file=sys.stderr)
         return 2
 
     from google.cloud import firestore
