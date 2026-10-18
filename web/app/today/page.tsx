@@ -7,37 +7,55 @@ import { PriorityBadge, WhyPriority } from "@/components/Priority";
 import { RequireRole } from "@/components/RequireRole";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
-import { LANE_LABELS, groupByLane, humanState, type Lane } from "@/lib/lanes";
+import { LANE_LABELS, humanState, type Lane } from "@/lib/lanes";
 import type { CaseView } from "@/lib/types";
 
-interface ListResponse { total: number; today: string; tier_counts: Record<string, number>; cases: CaseView[] }
+interface LaneBody { count: number; cases: CaseView[] }
+interface TodayResponse { total: number; today: string; tier_counts: Record<string, number>; lanes: Record<Lane, LaneBody> }
+const PER_LANE = 15;
 
 function Today() {
   const s = useSession();
-  const [data, setData] = useState<ListResponse | null>(null);
+  const [data, setData] = useState<TodayResponse | null>(null);
+  const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    try { setData(await api<ListResponse>("/api/cases?limit=1000", await s.headers())); }
+    try { setData(await api<TodayResponse>(`/api/today?per_lane=${PER_LANE}`, await s.headers())); }
     catch (e) { setErr((e as Error).message); }
   }, [s]);
   useEffect(() => { load(); }, [load]);
 
   const replace = (c: CaseView) =>
-    setData((d) => d && { ...d, cases: d.cases.map((x) => (x.id === c.id ? c : x)) });
+    setData((d) => d && {
+      ...d,
+      lanes: Object.fromEntries(Object.entries(d.lanes).map(([k, v]) =>
+        [k, { ...v, cases: v.cases.map((x) => (x.id === c.id ? c : x)) }])) as Record<Lane, LaneBody>,
+    });
+
+  async function more(lane: Lane) {
+    if (!data) return;
+    const n = Math.min(data.lanes[lane].cases.length + 25, 200);
+    const r = await api<{ cases: CaseView[] }>(`/api/cases?lane=${lane}&limit=${n}`, await s.headers());
+    setData((d) => d && { ...d, lanes: { ...d.lanes, [lane]: { ...d.lanes[lane], cases: r.cases } } });
+  }
 
   async function admin(path: string, body: unknown, label: string) {
+    setBusy(true);
+    setMsg(`${label}: working…`);
     try {
       const r = await api<Record<string, unknown>>(path, await s.headers(), { method: "POST", body: JSON.stringify(body) });
-      setMsg(`${label}: ${JSON.stringify(r.ladder ?? r)}`);
+      const l = r.ladder as Record<string, number> | undefined;
+      setMsg(l ? `${label}. Today is ${r.today}. Ladder: ${l.steps_run} steps on ${l.cases_touched} cases, ${l.reindexed} priorities refreshed, ${l.seconds}s.`
+        : `${label}: ${JSON.stringify(r)}`);
       await load();
     } catch (e) { setMsg((e as Error).message); }
+    finally { setBusy(false); }
   }
 
   if (err) return <p className="error" role="alert">{err}</p>;
   if (!data) return <p>Loading cases…</p>;
-  const lanes = groupByLane(data.cases, data.today);
 
   return (
     <>
@@ -51,9 +69,9 @@ function Today() {
       {s.role === "supervisor" && s.demoMode && (
         <div className="card demo row" aria-label="Demo controls">
           <strong>Demo controls:</strong>
-          {data.total === 0 && <button onClick={() => admin("/api/demo/seed", { n: 1000 }, "Seeded")}>Load 1,000 SIMULATED patients</button>}
-          <button onClick={() => admin("/api/demo/clock", { advance_days: 1 }, "Advanced 1 day")}>Advance 1 day</button>
-          <button onClick={() => admin("/api/demo/clock", { advance_days: 3 }, "Advanced 3 days")}>Advance 3 days</button>
+          {data.total === 0 && <button disabled={busy} onClick={() => admin("/api/demo/seed", { n: 1000 }, "Seeded")}>Load 1,000 SIMULATED patients</button>}
+          <button disabled={busy} onClick={() => admin("/api/demo/clock", { advance_days: 1 }, "Advanced 1 day")}>Advance 1 day</button>
+          <button disabled={busy} onClick={() => admin("/api/demo/clock", { advance_days: 3 }, "Advanced 3 days")}>Advance 3 days</button>
           <span className="muted">Advancing the clock runs the escalation ladder (Day 1, 2, 4, 7, 10, 14).</span>
         </div>
       )}
@@ -61,9 +79,9 @@ function Today() {
       <div className="lanes">
         {(Object.keys(LANE_LABELS) as Lane[]).map((lane) => (
           <section key={lane} aria-labelledby={`lane-${lane}`}>
-            <h2 id={`lane-${lane}`}>{LANE_LABELS[lane]} ({lanes[lane].length})</h2>
-            {lanes[lane].length === 0 && <p className="muted">No cases here.</p>}
-            {lanes[lane].slice(0, 15).map((c) => (
+            <h2 id={`lane-${lane}`}>{LANE_LABELS[lane]} ({data.lanes[lane].count})</h2>
+            {data.lanes[lane].count === 0 && <p className="muted">No cases here.</p>}
+            {data.lanes[lane].cases.map((c) => (
               <article key={c.id} className="card" aria-label={`Case ${c.participant_id}`}>
                 <div>
                   <PriorityBadge p={c.priority} />
@@ -78,7 +96,12 @@ function Today() {
                 <CaseActions c={c} onChange={replace} compact />
               </article>
             ))}
-            {lanes[lane].length > 15 && <p className="muted">Showing the 15 highest priority of {lanes[lane].length}.</p>}
+            {data.lanes[lane].count > data.lanes[lane].cases.length && (
+              <p className="muted">
+                Showing the {data.lanes[lane].cases.length} highest priority of {data.lanes[lane].count}.{" "}
+                {data.lanes[lane].cases.length < 200 && <button onClick={() => more(lane)}>Show more</button>}
+              </p>
+            )}
           </section>
         ))}
       </div>

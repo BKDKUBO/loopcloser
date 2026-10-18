@@ -12,7 +12,7 @@ export const LANE_LABELS: Record<Lane, string> = {
 const WAITING = new Set(["patient_notified", "action_scheduled", "rescheduled"]);
 const DONE = new Set(["closed", "visit_completed"]);
 
-/** Staff Today view lanes (PLAN_FINAL.md section 10). Pure, so it is unit tested. */
+/** Staff Today view lanes (PLAN_FINAL.md section 10). The API is authoritative (api/loopcloser/domain/indexing.py lane_for stores the lane on each case); this mirror is kept for tests and offline use. */
 export function laneFor(c: CaseView, today: string): Lane {
   if (DONE.has(c.state)) return "completed";
   if (c.due_date && c.due_date < today) return "overdue";

@@ -1,23 +1,38 @@
-"""In-memory repository for local runs and tests."""
+"""In-memory repository for local runs and tests. Mirrors the Firestore repository, including the
+idx_* query fields, so the same queries are tested without the emulator."""
 
 from __future__ import annotations
 
 import threading
+from typing import Any
 
 from ..domain.case import CaseView
 from ..domain.errors import Conflict
 from ..domain.events import Event
+from ..domain.indexing import FAR, sort_key
+from .base import Indexer, Pending
 
 
 class MemoryRepository:
-    def __init__(self) -> None:
+    def __init__(self, indexer: Indexer | None = None) -> None:
         self._events: dict[str, list[Event]] = {}
         self._cases: dict[str, CaseView] = {}
+        self._idx: dict[str, dict[str, Any]] = {}
+        self._meta: dict[str, dict[str, Any]] = {}
         self._lock = threading.Lock()
+        self.indexer = indexer
+        self.write_ops = 0  # for tests: documents written
+
+    def _index(self, case_id: str, projection: CaseView) -> None:
+        if self.indexer:
+            self._idx[case_id] = self.indexer(projection)
 
     def load_events(self, case_id: str) -> list[Event]:
         with self._lock:
             return list(self._events.get(case_id, []))
+
+    def load_events_many(self, case_ids: list[str]) -> dict[str, list[Event]]:
+        return {c: self.load_events(c) for c in case_ids}
 
     def append(self, case_id: str, events: list[Event], expected_version: int, projection: CaseView) -> None:
         with self._lock:
@@ -31,6 +46,18 @@ class MemoryRepository:
                     raise Conflict(f"event {ev.id} out of order or already exists")
             log.extend(events)
             self._cases[case_id] = projection
+            self._index(case_id, projection)
+            self.write_ops += len(events) + 1
+
+    def commit_many(self, items: list[Pending]) -> list[str]:
+        items = [it for it in items if it[2]]  # an item with no new events would be a blind overwrite
+        conflicts = []
+        for case_id, expected, events, projection in items:
+            try:
+                self.append(case_id, events, expected, projection)
+            except Conflict:
+                conflicts.append(case_id)
+        return conflicts
 
     def get_case(self, case_id: str) -> CaseView | None:
         with self._lock:
@@ -53,6 +80,60 @@ class MemoryRepository:
             except Conflict:
                 skipped.append(case_id)
         return skipped
+
+    def _match(self, case_id: str, lane, tier, person, patient) -> bool:
+        ix = self._idx.get(case_id)
+        if ix is None:
+            return False
+        v = self._cases[case_id]
+        return (
+            (lane is None or ix["idx_lane"] == lane)
+            and (tier is None or ix["idx_tier"] == tier)
+            and (person is None or person in ix["idx_people"])
+            and (patient is None or v.patient_uid == patient)
+        )
+
+    def query(self, *, lane=None, person=None, patient=None, limit: int = 50) -> list[CaseView]:
+        with self._lock:
+            ids = [c for c in self._cases if self._match(c, lane, None, person, patient)]
+            ids.sort(key=lambda c: sort_key({**self._idx[c], "id": c}))
+            return [self._cases[c].model_copy(deep=True) for c in ids[:limit]]
+
+    def count(self, *, lane=None, tier=None, person=None, patient=None) -> int:
+        with self._lock:
+            return sum(1 for c in self._cases if self._match(c, lane, tier, person, patient))
+
+    def ladder_due(self, today_iso: str) -> list[CaseView]:
+        with self._lock:
+            return [
+                self._cases[c].model_copy(deep=True)
+                for c, ix in sorted(self._idx.items())
+                if ix["idx_ladder_due"] <= today_iso
+            ]
+
+    def reindex(self, today_iso: str, *, everything: bool = False) -> int:
+        if not self.indexer:
+            return 0
+        changed = 0
+        with self._lock:
+            for c, v in self._cases.items():
+                ix = self._idx.get(c)
+                if everything or ix is None or ix.get("idx_recheck", FAR) <= today_iso:
+                    new = self.indexer(v)
+                    if new != ix:
+                        self._idx[c] = new
+                        changed += 1
+                        self.write_ops += 1
+        return changed
+
+    def index_of(self, case_id: str) -> dict[str, Any] | None:
+        return self._idx.get(case_id)
+
+    def get_meta(self, key: str) -> dict[str, Any]:
+        return dict(self._meta.get(key, {}))
+
+    def set_meta(self, key: str, value: dict[str, Any]) -> None:
+        self._meta[key] = dict(value)
 
     def ping(self) -> bool:
         return True

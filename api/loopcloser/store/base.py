@@ -2,14 +2,25 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from collections.abc import Callable
+from typing import Any, Protocol
 
 from ..domain.case import CaseView
 from ..domain.events import Event
 
+# Computes the stored idx_* query fields for a projection (domain/indexing.py). Set by the app.
+Indexer = Callable[[CaseView], dict[str, Any]]
+
+# One pending append: (case_id, expected_version, new_events, projection)
+Pending = tuple[str, int, list[Event], CaseView]
+
 
 class CaseRepository(Protocol):
+    indexer: Indexer | None
+
     def load_events(self, case_id: str) -> list[Event]: ...
+
+    def load_events_many(self, case_ids: list[str]) -> dict[str, list[Event]]: ...
 
     def append(self, case_id: str, events: list[Event], expected_version: int, projection: CaseView) -> None:
         """Atomically append events and write the projection.
@@ -17,6 +28,11 @@ class CaseRepository(Protocol):
         Raises Conflict if the case's current version is not expected_version
         (optimistic concurrency) or if any event id already exists.
         """
+        ...
+
+    def commit_many(self, items: list[Pending]) -> list[str]:
+        """Append to many cases in bulk with the same guarantees as append. Returns ids that conflicted
+        (left untouched, so a later run picks them up)."""
         ...
 
     def get_case(self, case_id: str) -> CaseView | None: ...
@@ -31,5 +47,24 @@ class CaseRepository(Protocol):
         A case that already exists is never touched; its id is returned in the skipped list.
         """
         ...
+
+    # Query by the stored idx_* fields. person = owner or backup owner; patient = patient_uid.
+    def query(
+        self, *, lane: str | None = None, person: str | None = None, patient: str | None = None, limit: int = 50
+    ) -> list[CaseView]: ...
+
+    def count(
+        self, *, lane: str | None = None, tier: str | None = None, person: str | None = None, patient: str | None = None
+    ) -> int: ...
+
+    def ladder_due(self, today_iso: str) -> list[CaseView]: ...
+
+    def reindex(self, today_iso: str, *, everything: bool = False) -> int:
+        """Recompute idx_* fields for cases whose idx_recheck is due (or all). Returns how many changed."""
+        ...
+
+    def get_meta(self, key: str) -> dict[str, Any]: ...
+
+    def set_meta(self, key: str, value: dict[str, Any]) -> None: ...
 
     def ping(self) -> bool: ...

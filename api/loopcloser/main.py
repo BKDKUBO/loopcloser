@@ -23,6 +23,7 @@ from .ai.assist import summarize_case
 from .auth import Principal, require
 from .config import Config, get_config
 from .domain import commands as cmd
+from .domain import indexing as idx
 from .domain import ladder as ladder_mod
 from .domain import priority as prio
 from .domain.case import CaseView
@@ -43,7 +44,6 @@ log = logging.getLogger("loopcloser")
 SENSITIVE_PREFIXES = ("/api/imports", "/api/ai", "/api/demo", "/api/ladder")
 MANILA = ZoneInfo("Asia/Manila")
 SEED_ACTOR = Actor(id="demo-seed-history", role=Role.COORDINATOR, kind="human")
-TIER_RANK = {"urgent": 0, "high": 1, "moderate": 2, "routine": 3}
 MAX_CSV_BYTES = 5 * 1024 * 1024
 
 
@@ -170,14 +170,46 @@ def create_app(
     settings = cmd.Settings(escalate_after_failed_contacts=cfg.escalate_after_failed_contacts)
     templates = default_templates()
     steps = ladder_mod.load_ladder(cfg.ladder_json)
-    clock = {"offset_days": 0}
+    clock: dict[str, Any] = {"offset_days": 0, "checked": 0.0}
+    indexed: dict[str, Any] = {"as_of": None, "full": False}
+
+    def _refresh_clock() -> None:
+        """The demo clock is stored in Firestore (meta/clock) so it survives restarts and an operator reset
+        (scripts/reset_demo.py) is picked up within 30 seconds."""
+        if not cfg.demo_mode or time.monotonic() - clock["checked"] < 30:
+            return
+        clock["checked"] = time.monotonic()
+        try:
+            stored = int(repo.get_meta("clock").get("offset_days", 0))
+        except Exception:  # noqa: BLE001 - never block a request on the demo clock
+            log.exception("could not read the demo clock")
+            return
+        if stored < clock["offset_days"]:
+            indexed["full"] = True  # clock went back: stored priorities are for a later date
+        clock["offset_days"] = stored
 
     def now() -> datetime:
         """Simulated clock: real time plus the demo offset ("advance day")."""
+        _refresh_clock()
         return datetime.now(UTC) + timedelta(days=clock["offset_days"])
 
     def today() -> date:
         return now().astimezone(MANILA).date()
+
+    repo.indexer = lambda v: idx.index_fields(v, today(), steps)
+
+    def ensure_indexed() -> None:
+        """Once per (simulated) day, refresh the stored tier and lane of cases whose due date crossed a threshold."""
+        t = today().isoformat()
+        if indexed["as_of"] is None:  # first call on this instance: were fields stored for a later date?
+            stored = repo.get_meta("index").get("as_of")
+            indexed["full"] = indexed["full"] or bool(stored and stored > t)
+        if indexed["as_of"] != t or indexed["full"]:
+            n = repo.reindex(t, everything=indexed["full"])
+            indexed["as_of"], indexed["full"] = t, False
+            repo.set_meta("index", {"as_of": t})
+            if n:
+                log.info("reindexed cases", extra={"fields": {"count": n, "as_of": t}})
 
     if cfg.demo_mode:
         log.warning("DEMO_MODE is on: role switcher enabled next to Firebase Auth")
@@ -332,35 +364,56 @@ def create_app(
             raise HTTPException(404, "Case not found.")  # same answer for hidden and missing
         return v
 
+    def _scope(p: Principal) -> dict[str, str]:
+        """Which cases a role may list, as a query filter (same rule as _visible)."""
+        if has_perm(p.role, Perm.CASE_READ_ALL):
+            return {}
+        if has_perm(p.role, Perm.CASE_READ_ASSIGNED):
+            return {"person": p.uid}
+        if has_perm(p.role, Perm.CASE_READ_OWN):
+            return {"patient": p.uid}
+        raise HTTPException(403, "Not allowed.")
+
+    def _tier_counts(scope: dict[str, str]) -> dict[str, int]:
+        return {t: repo.count(tier=t, **scope) for t in idx.TIERS}
+
+    @app.get("/api/today")
+    def today_view(
+        p: Principal = Depends(auth.current_user), per_lane: int = Query(15, ge=1, le=100)
+    ) -> dict[str, Any]:
+        """Staff Today view: the top cases of each lane plus exact counts, without reading every case.
+        Cost per load: per_lane documents per lane plus a few aggregation counts."""
+        ensure_indexed()
+        scope = _scope(p)
+        lanes = {}
+        for lane in idx.LANES:
+            rows = repo.query(lane=lane, limit=per_lane, **scope)
+            lanes[lane] = {"count": repo.count(lane=lane, **scope), "cases": [_out(v, p) for v in rows]}
+        return {
+            "today": today().isoformat(),
+            "total": sum(x["count"] for x in lanes.values()),
+            "tier_counts": _tier_counts(scope),
+            "lanes": lanes,
+        }
+
     @app.get("/api/cases")
     def list_cases(
         p: Principal = Depends(auth.current_user),
-        state: CaseState | None = None,
-        tier: str | None = None,
-        owner: str | None = None,
-        limit: int = Query(200, le=1000),
+        lane: str | None = None,
+        limit: int = Query(50, ge=1, le=200),
     ) -> dict[str, Any]:
-        rows = [
-            v
-            for v in repo.list_cases()
-            if _visible(v, p) and (state is None or v.state == state) and (owner is None or v.owner == owner)
-        ]
-        out = [_out(v, p) for v in rows]
-        if tier:
-            out = [c for c in out if c["priority"]["tier"] == tier]
-        out.sort(
-            key=lambda c: (
-                c["state"] == "closed",
-                TIER_RANK[c["priority"]["tier"]],
-                -c["priority"]["score"],
-                c["due_date"] or "9999",
-                c["id"],
-            )
-        )
-        counts: dict[str, int] = {}
-        for c in out:
-            counts[c["priority"]["tier"]] = counts.get(c["priority"]["tier"], 0) + 1
-        return {"total": len(out), "today": today().isoformat(), "tier_counts": counts, "cases": out[:limit]}
+        """Cases you can see, highest priority first, optionally one lane. Reads at most `limit` documents."""
+        if lane is not None and lane not in idx.LANES:
+            raise HTTPException(400, f"lane must be one of {', '.join(idx.LANES)}")
+        ensure_indexed()
+        scope = _scope(p)
+        rows = repo.query(lane=lane, limit=limit, **scope)
+        return {
+            "total": repo.count(lane=lane, **scope),
+            "today": today().isoformat(),
+            "tier_counts": _tier_counts(scope),
+            "cases": [_out(v, p) for v in rows],
+        }
 
     @app.get("/api/cases/{case_id}")
     def get_case(case_id: str, p: Principal = Depends(auth.current_user)) -> dict[str, Any]:
@@ -519,6 +572,7 @@ def create_app(
 
     @app.get("/api/clock")
     def get_clock(_: Principal = Depends(auth.current_user)) -> dict[str, Any]:
+        _refresh_clock()
         return {
             "today": today().isoformat(),
             "offset_days": clock["offset_days"],
@@ -530,14 +584,34 @@ def create_app(
     def advance_clock(body: ClockIn, _: Principal = Depends(require(Perm.ADMIN))) -> dict[str, Any]:
         if not cfg.demo_mode:
             raise HTTPException(403, "The simulated clock is only available in demo mode.")
+        clock["checked"] = 0.0
+        _refresh_clock()  # start from the stored value, not a stale copy
         clock["offset_days"] += body.advance_days
-        result = ladder_mod.run_all(repo, today=today(), now=now(), ladder=steps)
+        repo.set_meta("clock", {"offset_days": clock["offset_days"], "updated_at": datetime.now(UTC).isoformat()})
+        result = _daily_run()
         return {"today": today().isoformat(), "offset_days": clock["offset_days"], "ladder": result}
+
+    def _daily_run() -> dict[str, Any]:
+        started = time.monotonic()
+        result = ladder_mod.run_all(repo, today=today(), now=now(), ladder=steps)
+        result["reindexed"] = repo.reindex(today().isoformat())
+        indexed["as_of"] = today().isoformat()
+        repo.set_meta("index", {"as_of": indexed["as_of"]})
+        result["seconds"] = round(time.monotonic() - started, 2)
+        log.info("ladder run", extra={"fields": result})
+        return result
 
     @app.post("/api/ladder/run")
     def run_ladder(_: Principal = Depends(require(Perm.ADMIN))) -> dict[str, Any]:
-        """Run due ladder steps for all open cases (in production a Cloud Scheduler job would call this)."""
-        return ladder_mod.run_all(repo, today=today(), now=now(), ladder=steps)
+        """Run due ladder steps (in production a Cloud Scheduler job would call this once a day)."""
+        return _daily_run()
+
+    @app.post("/api/admin/reindex")
+    def reindex_all(_: Principal = Depends(require(Perm.ADMIN))) -> dict[str, Any]:
+        """Recompute the stored query fields of every case (after a code change to priority or lanes)."""
+        n = repo.reindex(today().isoformat(), everything=True)
+        indexed["as_of"] = today().isoformat()
+        return {"reindexed": n, "as_of": today().isoformat()}
 
     @app.post("/api/ai/cases/{case_id}/summary")
     def ai_summary(case_id: str, p: Principal = Depends(require(Perm.CASE_NOTE))) -> dict[str, Any]:

@@ -184,7 +184,7 @@ def test_csv_validate_and_seed(client):
     assert client.post("/api/demo/seed", json={"n": 100}, headers=H["coordinator"]).status_code == 403
     r = client.post("/api/demo/seed", json={"n": 200}, headers=H["supervisor"])
     assert r.json()["data_label"] == "SIMULATED" and r.json()["opened"] > 190
-    lst = client.get("/api/cases?limit=1000", headers=H["coordinator"]).json()
+    lst = client.get("/api/cases?limit=200", headers=H["coordinator"]).json()
     assert set(lst["tier_counts"]) >= {"high", "moderate"}
     states = {c["state"] for c in lst["cases"]}
     assert {"new_result", "action_scheduled", "no_show"} <= states

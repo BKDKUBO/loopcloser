@@ -10,13 +10,15 @@ and always logs an event (rule LAD-1). Reminders use the approved template only.
 from __future__ import annotations
 
 import json
+import time
 from dataclasses import dataclass
 from datetime import date, datetime
 
 from ..store.base import CaseRepository
 from . import commands as cmd
-from .case import CaseView
-from .events import AUTOMATION_ACTOR, SYSTEM_ACTOR
+from .case import CaseView, project
+from .errors import Conflict
+from .events import AUTOMATION_ACTOR, SYSTEM_ACTOR, Event
 from .priority import SUPPORTED_LANGUAGES
 from .states import CaseState as S
 from .states import is_allowed
@@ -72,6 +74,9 @@ def _needed(step: str, v: CaseView) -> bool:
     if step == "unresolved_review":
         return v.state not in {S.VISIT_COMPLETED, S.CLOSED}
     return False
+
+
+needed = _needed  # public name, used by the stored query fields (indexing.py)
 
 
 def status(v: CaseView, today: date, ladder: tuple[Step, ...] = DEFAULT_LADDER) -> list[dict]:
@@ -136,13 +141,63 @@ def run_case(
     return actions
 
 
+class _Buffer:
+    """A write buffer over the real repository. Ladder commands run against it exactly as against a
+    store (same guards and events), then every change is written in bulk with commit_many."""
+
+    def __init__(self, inner: CaseRepository, events: dict[str, list[Event]]) -> None:
+        self.inner = inner
+        self.indexer = None
+        self._events = {k: list(v) for k, v in events.items()}
+        self._base = {k: (v[-1].seq if v else 0) for k, v in self._events.items()}
+        self._views: dict[str, CaseView] = {}
+        self._new: dict[str, list[Event]] = {}
+
+    def load_events(self, case_id: str) -> list[Event]:
+        if case_id not in self._events:
+            evs = self.inner.load_events(case_id)
+            self._events[case_id], self._base[case_id] = evs, (evs[-1].seq if evs else 0)
+        return list(self._events[case_id])
+
+    def append(self, case_id: str, events: list[Event], expected_version: int, projection: CaseView) -> None:
+        log = self._events.setdefault(case_id, [])
+        if (log[-1].seq if log else 0) != expected_version:
+            raise Conflict(f"case {case_id} changed")
+        log.extend(events)
+        self._new.setdefault(case_id, []).extend(events)
+        self._views[case_id] = projection
+
+    def get_case(self, case_id: str) -> CaseView | None:
+        if case_id in self._views:
+            return self._views[case_id]
+        if case_id in self._events and self._events[case_id]:
+            self._views[case_id] = project(self._events[case_id])
+            return self._views[case_id]
+        return self.inner.get_case(case_id)
+
+    def pending(self) -> list[tuple[str, int, list[Event], CaseView]]:
+        return [(c, self._base[c], evs, self._views[c]) for c, evs in sorted(self._new.items()) if evs]
+
+
 def run_all(repo: CaseRepository, *, today: date, now: datetime, ladder: tuple[Step, ...] = DEFAULT_LADDER) -> dict:
+    """Run every due ladder step. Only cases whose stored idx_ladder_due has arrived are read, their event
+    logs are loaded in parallel, and all new events are written in batches (rule LAD-1 per step)."""
+    started = time.monotonic()
+    due = [v for v in repo.ladder_due(today.isoformat()) if v.state != S.CLOSED and not v.automation_paused]
+    buf = _Buffer(repo, repo.load_events_many([v.id for v in due]))
     touched, steps = 0, 0
-    for v in repo.list_cases():
-        if v.state == S.CLOSED or v.automation_paused:
-            continue
-        acts = run_case(repo, v.id, today=today, now=now, ladder=ladder)
+    for v in due:
+        acts = run_case(buf, v.id, today=today, now=now, ladder=ladder)  # type: ignore[arg-type]
         if acts:
             touched += 1
             steps += len(acts)
-    return {"cases_touched": touched, "steps_run": steps, "as_of": today.isoformat()}
+    pending = buf.pending()
+    conflicts = repo.commit_many(pending) if pending else []
+    return {
+        "cases_checked": len(due),
+        "cases_touched": touched - len(conflicts),
+        "steps_run": steps,
+        "conflicts": len(conflicts),
+        "as_of": today.isoformat(),
+        "seconds": round(time.monotonic() - started, 2),
+    }

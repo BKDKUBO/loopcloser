@@ -4,16 +4,116 @@
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "owner", "order": "ASCENDING" },
-        { "fieldPath": "due_date", "order": "ASCENDING" }
+        {
+          "fieldPath": "idx_rank",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "idx_score",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "idx_due",
+          "order": "ASCENDING"
+        }
       ]
     },
     {
       "collectionGroup": "cases",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "state", "order": "ASCENDING" },
-        { "fieldPath": "due_date", "order": "ASCENDING" }
+        {
+          "fieldPath": "idx_lane",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "idx_rank",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "idx_score",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "idx_due",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "idx_people",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "idx_rank",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "idx_score",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "idx_due",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "idx_people",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "idx_lane",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "idx_rank",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "idx_score",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "idx_due",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "idx_people",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "idx_lane",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "cases",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "idx_people",
+          "arrayConfig": "CONTAINS"
+        },
+        {
+          "fieldPath": "idx_tier",
+          "order": "ASCENDING"
+        }
       ]
     }
   ],

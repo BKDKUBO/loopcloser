@@ -58,3 +58,45 @@ def test_firestore_bulk_create_never_overwrites(fs_repo, lib, coord):
     assert len(fs_repo.existing_ids()) == 120
     assert fs_repo.get_case("C-5").owner == "kept"
     assert [e.seq for e in fs_repo.load_events("C-7")] == [e.seq for e in stage.load_events("C-7")]
+
+
+def test_firestore_queries_counts_ladder_and_reindex(fs_repo, lib, coord):
+    from datetime import timedelta
+
+    from loopcloser.domain import indexing as idx
+    from loopcloser.domain import ladder
+    from loopcloser.store.memory import MemoryRepository
+
+    day = {"d": NOW.date()}
+    mem = MemoryRepository()
+    for r in (fs_repo, mem):
+        r.indexer = lambda v: idx.index_fields(v, day["d"])
+    pw = lib.match("fit", "positive", "abnormal")
+    for i in range(30):
+        s = screening(screened_at=(NOW.date() - timedelta(days=i % 15)).isoformat())
+        for r in (fs_repo, mem):
+            cmd.open_case(r, case_id=f"C-{i:02d}", screening=s, pathway=pw, actor=coord, owner=f"w{i % 3}", now=NOW)
+
+    def same():
+        for lane in idx.LANES:
+            assert fs_repo.count(lane=lane) == mem.count(lane=lane)
+            assert [v.id for v in fs_repo.query(lane=lane, limit=7)] == [v.id for v in mem.query(lane=lane, limit=7)]
+            assert fs_repo.count(lane=lane, person="w1") == mem.count(lane=lane, person="w1")
+        for t in idx.TIERS:
+            assert fs_repo.count(tier=t) == mem.count(tier=t)
+
+    same()
+    day["d"] = NOW.date() + timedelta(days=25)
+    assert fs_repo.reindex(day["d"].isoformat()) == mem.reindex(day["d"].isoformat()) > 0
+    same()
+    due = fs_repo.ladder_due(day["d"].isoformat())
+    assert sorted(v.id for v in due) == sorted(v.id for v in mem.ladder_due(day["d"].isoformat())) and due
+    res = ladder.run_all(fs_repo, today=day["d"], now=NOW + timedelta(days=25))
+    assert res["conflicts"] == 0 and res["cases_touched"] == len(due)
+    assert ladder.run_all(fs_repo, today=day["d"], now=NOW + timedelta(days=25))["steps_run"] == 0
+    # a stale bulk write is refused and reported, never applied over newer events
+    v = fs_repo.get_case("C-00")
+    n = len(fs_repo.load_events("C-00"))
+    last = fs_repo.load_events("C-00")[-1]
+    assert fs_repo.commit_many([("C-00", last.seq - 1, [last], v)]) == ["C-00"]
+    assert len(fs_repo.load_events("C-00")) == n

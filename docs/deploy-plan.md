@@ -5,6 +5,10 @@ Live site https://loopcloser-bkdkubo.web.app, API https://loopcloser-api-ejilcnp
 Created: Firebase web app "LoopCloser Web", service accounts `loopcloser-api` (Firestore user, one secret)
 and `loopcloser-build` (log writer, Artifact Registry writer, storage object viewer), Artifact Registry repo
 `loopcloser`, Cloud Run service `loopcloser-api` (min 0, max 1). 1,005 SIMULATED cases seeded.
+Each case also stores `idx_*` query fields (`api/loopcloser/domain/indexing.py`). A Today load reads 15 cases
+per lane (60 documents) plus 8 aggregation counts, instead of all cases. "Advance the clock" reads only cases
+with a ladder step due, loads their event logs in parallel and writes in batches of up to 450. Reset the
+demo with `api/scripts/reset_demo.py` (deletes SIMULATED cases only, resets the clock).
 Not done: Google sign-in provider (needs the Firebase console, see below), real account roles, scheduler job.
 The web build uses `NEXT_PUBLIC_GOOGLE_SIGNIN=off` so the Google button stays disabled until the provider is on.
 
