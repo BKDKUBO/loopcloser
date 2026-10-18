@@ -260,3 +260,11 @@ def test_removed_settings_are_rejected(make_cfg):
 
 def test_mask():
     assert mask_participant("P-000042") == "P-••••42"
+
+
+def test_seed_is_idempotent_and_bulk(client):
+    h = {"x-demo-role": "supervisor"}
+    first = client.post("/api/demo/seed", json={"n": 50}, headers=h).json()
+    again = client.post("/api/demo/seed", json={"n": 50}, headers=h).json()
+    assert first["opened"] > 0 and again["opened"] == 0
+    assert again["skipped"] >= first["opened"]

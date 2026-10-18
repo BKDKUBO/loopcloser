@@ -24,3 +24,4 @@ service-account*.json
 .DS_Store
 .idea/
 .vscode/
+deploy/.web-config.env

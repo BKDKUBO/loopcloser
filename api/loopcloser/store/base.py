@@ -23,4 +23,13 @@ class CaseRepository(Protocol):
 
     def list_cases(self) -> list[CaseView]: ...
 
+    def existing_ids(self) -> set[str]: ...
+
+    def create_cases(self, cases: list[tuple[str, list[Event], CaseView]]) -> list[str]:
+        """Write brand-new cases (full event log plus projection) in bulk.
+
+        A case that already exists is never touched; its id is returned in the skipped list.
+        """
+        ...
+
     def ping(self) -> bool: ...

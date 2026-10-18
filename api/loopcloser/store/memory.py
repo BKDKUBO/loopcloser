@@ -41,5 +41,18 @@ class MemoryRepository:
         with self._lock:
             return [c.model_copy(deep=True) for c in self._cases.values()]
 
+    def existing_ids(self) -> set[str]:
+        with self._lock:
+            return set(self._cases)
+
+    def create_cases(self, cases: list[tuple[str, list[Event], CaseView]]) -> list[str]:
+        skipped = []
+        for case_id, events, projection in cases:
+            try:
+                self.append(case_id, events, 0, projection)
+            except Conflict:
+                skipped.append(case_id)
+        return skipped
+
     def ping(self) -> bool:
         return True

@@ -73,6 +73,47 @@ class FirestoreRepository:
     def list_cases(self) -> list[CaseView]:
         return [CaseView.model_validate(d.to_dict()) for d in self.cases.stream()]
 
+    def existing_ids(self) -> set[str]:
+        return {d.id for d in self.cases.select([]).stream()}
+
+    def create_cases(self, cases: list[tuple[str, list[Event], CaseView]]) -> list[str]:
+        """Batched create() writes (max 500 per batch). create() fails if a document exists, so nothing is
+        overwritten. If a batch hits an existing case, its cases fall back to one transaction each."""
+        from google.api_core.exceptions import AlreadyExists
+        from google.api_core.exceptions import Conflict as GConflict
+
+        skipped: list[str] = []
+        chunk: list[tuple[str, list[Event], CaseView]] = []
+        ops = 0
+
+        def flush():
+            nonlocal chunk, ops
+            if not chunk:
+                return
+            batch = self.db.batch()
+            for case_id, events, projection in chunk:
+                batch.create(self.cases.document(case_id), projection.to_doc())
+                for ev in events:
+                    batch.create(self._events_col(case_id).document(f"{ev.seq:06d}"), ev.to_doc())
+            try:
+                batch.commit()
+            except (AlreadyExists, GConflict):
+                for case_id, events, projection in chunk:
+                    try:
+                        self.append(case_id, events, 0, projection)
+                    except Conflict:
+                        skipped.append(case_id)
+            chunk, ops = [], 0
+
+        for item in cases:
+            n = len(item[1]) + 1
+            if ops + n > 450:
+                flush()
+            chunk.append(item)
+            ops += n
+        flush()
+        return skipped
+
     def ping(self) -> bool:
         list(self.cases.limit(1).stream())
         return True

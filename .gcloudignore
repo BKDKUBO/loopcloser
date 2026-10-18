@@ -1,0 +1,12 @@
+# Cloud Build only needs the API source and its Dockerfile.
+.git
+.github
+#!include:.gitignore
+web/
+docs/
+node_modules/
+**/node_modules/
+**/.venv/
+**/__pycache__/
+**/.next/
+web/out/

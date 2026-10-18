@@ -580,6 +580,12 @@ def create_app(
         return {"summary": rep.summary(), "issues_preview": preview, "error_csv": rep.error_csv()}
 
     def _open_from_rows(rows: list[dict[str, str]], actor, synthetic: bool) -> dict[str, int]:
+        # Build new cases in a scratch in-memory store (same domain commands and guards), then write them
+        # in bulk. Seeding 1,000 cases one transaction at a time took minutes on Firestore.
+        from .store.memory import MemoryRepository
+
+        stage = MemoryRepository()
+        existing = repo.existing_ids()
         opened = skipped = 0
         for row in rows:
             if row.get("severity") == "normal":
@@ -587,12 +593,12 @@ def create_app(
                 continue
             pw = lib.match(row["screening_type"], row["result"], row["severity"])
             case_id = f"C-{row['record_id']}"
-            if not pw or repo.get_case(case_id):
+            if not pw or case_id in existing or stage.get_case(case_id):
                 skipped += 1
                 continue
             barrier = row.get("barrier") or ""
             cmd.open_case(
-                repo,
+                stage,
                 case_id=case_id,
                 pathway=pw,
                 actor=actor,
@@ -616,11 +622,13 @@ def create_app(
                 },
             )
             if synthetic:
-                _simulate_history(case_id, row)
+                _simulate_history(stage, case_id, row)
             opened += 1
-        return {"opened": opened, "skipped": skipped}
+        staged = [(cid, stage.load_events(cid), stage.get_case(cid)) for cid in sorted(stage.existing_ids())]
+        lost = repo.create_cases(staged)
+        return {"opened": opened - len(lost), "skipped": skipped + len(lost)}
 
-    def _simulate_history(case_id: str, row: dict[str, str]) -> None:
+    def _simulate_history(repo: CaseRepository, case_id: str, row: dict[str, str]) -> None:
         """Walk SIMULATED cases forward to match their synthetic status, so the demo has variety."""
         status = row.get("status")
         v = repo.get_case(case_id)

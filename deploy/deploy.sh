@@ -35,8 +35,11 @@ gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudb
   firestore.googleapis.com secretmanager.googleapis.com
 gcloud iam service-accounts describe "$SA" >/dev/null 2>&1 || \
   gcloud iam service-accounts create loopcloser-api --display-name "LoopCloser API"
-gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$SA" \
-  --role roles/datastore.user --condition=None --format=none
+for i in 1 2 3 4 5 6; do   # a new service account takes a moment to be visible to IAM
+  gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$SA" \
+    --role roles/datastore.user --condition=None --format=none && break
+  [ "$i" = 6 ] && exit 1; sleep 10
+done
 gcloud firestore databases describe --database="(default)" >/dev/null 2>&1 || \
   gcloud firestore databases create --database="(default)" --location="$REGION" --type=firestore-native \
     --enable-pitr
@@ -45,7 +48,19 @@ gcloud artifacts repositories describe "$REPO" --location "$REGION" >/dev/null 2
 gcloud secrets add-iam-policy-binding loopcloser-gemini-api-key \
   --member "serviceAccount:$SA" --role roles/secretmanager.secretAccessor --format=none
 
+# Builds run as their own small service account (new projects give the default one no rights).
+BUILD_SA="loopcloser-build@${PROJECT_ID}.iam.gserviceaccount.com"
+gcloud iam service-accounts describe "$BUILD_SA" >/dev/null 2>&1 || \
+  gcloud iam service-accounts create loopcloser-build --display-name "LoopCloser Cloud Build"
+for role in roles/logging.logWriter roles/artifactregistry.writer roles/storage.objectViewer; do
+  for i in 1 2 3 4 5 6; do
+    gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$BUILD_SA" \
+      --role "$role" --condition=None --format=none && break
+    [ "$i" = 6 ] && exit 1; sleep 10
+  done
+done
 gcloud builds submit "$ROOT" --region "$REGION" --config "$ROOT/deploy/cloudbuild-api.yaml" \
+  --service-account "projects/${PROJECT_ID}/serviceAccounts/${BUILD_SA}" \
   --substitutions "_IMAGE=${IMAGE}"
 PROJECT_ID="$PROJECT_ID" IMAGE="$IMAGE" WEB_ORIGIN="$WEB_ORIGIN" DEMO_MODE="$DEMO_MODE" MAX_INSTANCES="$MAX_INSTANCES" envsubst < "$ROOT/deploy/api-service.yaml" > /tmp/loopcloser-api.yaml
 gcloud run services replace /tmp/loopcloser-api.yaml --region "$REGION"
