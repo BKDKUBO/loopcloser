@@ -1,6 +1,14 @@
-# Deploy plan (waiting for approval)
+# Deploy plan
 
-Nothing here has been run. The project `loopcloser-bkdkubo` already exists with billing, Firebase, the needed
+**Status: deployed on 2026-10-18 (Asia/Manila) with DEMO_MODE=true.**
+Live site https://loopcloser-bkdkubo.web.app, API https://loopcloser-api-ejilcnpasq-as.a.run.app.
+Created: Firebase web app "LoopCloser Web", service accounts `loopcloser-api` (Firestore user, one secret)
+and `loopcloser-build` (log writer, Artifact Registry writer, storage object viewer), Artifact Registry repo
+`loopcloser`, Cloud Run service `loopcloser-api` (min 0, max 1). 1,005 SIMULATED cases seeded.
+Not done: Google sign-in provider (needs the Firebase console, see below), real account roles, scheduler job.
+The web build uses `NEXT_PUBLIC_GOOGLE_SIGNIN=off` so the Google button stays disabled until the provider is on.
+
+The original plan follows. The project `loopcloser-bkdkubo` already exists with billing, Firebase, the needed
 APIs, Firestore `(default)` with backups, the Gemini key in Secret Manager and a US$5/month budget alert
 (see `gcp-project.md`). The InvoiceSentinel project is never touched; the scripts refuse its id.
 

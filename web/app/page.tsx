@@ -5,6 +5,9 @@ import { useState } from "react";
 import { useSession } from "@/lib/auth";
 import { ROLES, type Role } from "@/lib/types";
 
+// Set NEXT_PUBLIC_GOOGLE_SIGNIN=off at build time until the Google provider is enabled in Firebase Auth.
+const GOOGLE_SIGNIN_ON = process.env.NEXT_PUBLIC_GOOGLE_SIGNIN !== "off";
+
 export default function SignIn() {
   const s = useSession();
   const router = useRouter();
@@ -19,11 +22,14 @@ export default function SignIn() {
       <h2>Staff sign-in</h2>
       <p className="muted">Real accounts use Firebase Auth. Your role (worker, coordinator, supervisor, program
         manager) is set by an administrator and checked on every request.</p>
-      <button className="primary" disabled={!s.firebaseConfigured} onClick={async () => {
+      <button className="primary" disabled={!s.firebaseConfigured || !GOOGLE_SIGNIN_ON} onClick={async () => {
         try { await s.signInWithGoogle(); router.push("/today"); }
         catch { setErr("Sign-in failed. Please try again."); }
       }}>Sign in with Google</button>
       {!s.firebaseConfigured && <p className="muted">Firebase sign-in is not configured in this build.</p>}
+      {s.firebaseConfigured && !GOOGLE_SIGNIN_ON && (
+        <p className="muted">Google sign-in is not switched on yet for this deployment. Judges can use Demo mode below.</p>
+      )}
 
       {s.demoMode && (
         <section className="card demo" aria-labelledby="demo-h" style={{ marginTop: 24 }}>
