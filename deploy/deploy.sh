@@ -18,13 +18,19 @@ Dry run. This would:
   3. Create the Firestore (default) database (${REGION}) with point-in-time recovery
   4. Create Artifact Registry repo ${REPO} and build ${IMAGE}
   5. Grant ${SA} access to secret loopcloser-gemini-api-key (must already exist)
-  6. Deploy Cloud Run service loopcloser-api (min 0, max 5 instances)
+  6. Deploy Cloud Run service loopcloser-api (min 0, max ${MAX_INSTANCES} instances, DEMO_MODE=${DEMO_MODE})
   7. Build the static web app and deploy Firebase Hosting (${WEB_ORIGIN}) + Firestore rules/indexes
 Set CONFIRM=yes to run.
 PLAN
   exit 0
 fi
 
+# Firebase web config is public (it identifies the project, it is not a secret). Get it once with
+#   firebase apps:sdkconfig WEB --project "$PROJECT_ID"
+# and export NEXT_PUBLIC_FIREBASE_API_KEY / _AUTH_DOMAIN / _PROJECT_ID before running this script.
+if [[ -z "${NEXT_PUBLIC_FIREBASE_API_KEY:-}" ]]; then
+  echo "NEXT_PUBLIC_FIREBASE_API_KEY is not set: the web app would have no real sign-in. Stopping." >&2; exit 1
+fi
 gcloud services enable run.googleapis.com artifactregistry.googleapis.com cloudbuild.googleapis.com \
   firestore.googleapis.com secretmanager.googleapis.com
 gcloud iam service-accounts describe "$SA" >/dev/null 2>&1 || \
@@ -41,11 +47,11 @@ gcloud secrets add-iam-policy-binding loopcloser-gemini-api-key \
 
 gcloud builds submit "$ROOT" --region "$REGION" --config "$ROOT/deploy/cloudbuild-api.yaml" \
   --substitutions "_IMAGE=${IMAGE}"
-PROJECT_ID="$PROJECT_ID" IMAGE="$IMAGE" WEB_ORIGIN="$WEB_ORIGIN" envsubst < "$ROOT/deploy/api-service.yaml" > /tmp/loopcloser-api.yaml
+PROJECT_ID="$PROJECT_ID" IMAGE="$IMAGE" WEB_ORIGIN="$WEB_ORIGIN" DEMO_MODE="$DEMO_MODE" MAX_INSTANCES="$MAX_INSTANCES" envsubst < "$ROOT/deploy/api-service.yaml" > /tmp/loopcloser-api.yaml
 gcloud run services replace /tmp/loopcloser-api.yaml --region "$REGION"
 gcloud run services add-iam-policy-binding loopcloser-api --region "$REGION" \
   --member allUsers --role roles/run.invoker --format=none   # public; the app enforces auth per route
 
-(cd "$ROOT/web" && npm ci && NEXT_PUBLIC_API_URL="" NEXT_PUBLIC_AUTH_MODE="${WEB_AUTH_MODE:-firebase}" npm run build)
+(cd "$ROOT/web" && npm ci && NEXT_PUBLIC_API_URL="" npm run build)
 (cd "$ROOT" && firebase deploy --project "$PROJECT_ID" --only hosting,firestore)
 echo "Done. Check: ${WEB_ORIGIN}/ready"

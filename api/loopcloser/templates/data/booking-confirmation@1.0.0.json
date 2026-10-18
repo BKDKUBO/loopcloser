@@ -1,0 +1,29 @@
+{
+  "id": "booking-confirmation",
+  "version": "1.0.0",
+  "name": "Booking confirmation",
+  "channels": [
+    "sms",
+    "patient_view"
+  ],
+  "part_order": [
+    "body"
+  ],
+  "placeholders": [
+    "appointment_date",
+    "clinic",
+    "clinic_phone"
+  ],
+  "lookups": {},
+  "languages": {
+    "en": {
+      "body": "Your appointment is booked: {appointment_date} at {clinic}. Call {clinic_phone} to change it."
+    },
+    "fil": {
+      "body": "Naka-book na ang iyong appointment: {appointment_date} sa {clinic}. Tumawag sa {clinic_phone} para baguhin ito."
+    }
+  },
+  "kind": "official",
+  "status": "pending_review",
+  "review_note": "Pending clinical review and native Filipino speaker review. Not yet approved for real patients."
+}

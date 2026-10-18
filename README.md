@@ -67,18 +67,41 @@ project setup, billing and cost.
 - **CSV validation** (`imports/csv_validation.py`): row-level errors and warnings, import of valid rows only,
   downloadable error CSV.
 
+## Week 2 features
+
+- **Demo mode (judges).** With `DEMO_MODE=true` the sign-in page shows a "Demo mode: pick a role" card and every page
+  shows a banner: production uses real Firebase Auth accounts with role permissions. Real sign-in stays available.
+- **Follow-up priority (points, not AI).** Critical result +5, red flag +5, deadline passed +4, due within 3 days +3,
+  no appointment +3, missed visit +2, transport/cost/work barrier +2, no successful contact +2, comorbidity +1,
+  language support +1. Urgent 8+, High 5 to 7, Moderate 3 to 4, Routine 0 to 2. Every case shows a
+  "Why this priority?" list. Supervisors can override with a reason and a note; the override is an event and cannot
+  lower a case with an open red flag (`domain/priority.py`, rules PRI-1, PRI-2).
+- **Today view.** Four lanes (needs action, overdue, waiting for patient, recently completed) sorted by priority,
+  with Call, Message, Assign and the recommended action on each card.
+- **Case detail action panel.** Next action with the reason, book, reschedule, escalate, close with evidence,
+  barriers, escalation ladder status and the full event timeline.
+- **Patient message templates.** Five templates in English and Filipino (result notice in 4 parts, reminder,
+  short SMS, emergency guidance, booking confirmation), versioned and hash-locked. All are labeled
+  **pending clinical and native Filipino speaker review**. Sending is simulated and template only. Gemini never
+  sends official messages (rule MSG-3).
+- **Escalation ladder.** Day 0 upload, Day 1 human review, Day 2 first contact, Day 4 reminder, Day 7 community
+  health worker, Day 10 supervisor (case escalates), Day 14 unresolved review (`domain/ladder.py`, rule LAD-1).
+  In demo mode a supervisor can advance a simulated clock to watch it run.
+
+Screenshots: `docs/screenshots/week2/`. Deploy plan: `docs/deploy-plan.md`.
+
 ## Run locally
 
 ```
 make install          # Python venv + npm packages
-make api              # API on :8080, demo auth, in-memory store
+make api              # API on :8080, DEMO_MODE=true, in-memory store
 make web              # web on :3000 (another terminal)
 make seed             # load 1,000 SIMULATED patients
 make test             # API + web unit tests
 make test-emulator    # Firestore rules + Firestore repository tests (needs Java 21 and firebase-tools)
 ```
 
-Open http://localhost:3000 and pick a role. API docs at http://localhost:8080/docs (off in production).
+Open http://localhost:3000 and pick a role from the Demo mode card (or sign in with Google when Firebase is configured). API docs at http://localhost:8080/docs (off in production).
 
 ## Production-readiness checklist
 
@@ -94,11 +117,13 @@ Status: ✅ done in code and tested · 🟡 configured, applied at deploy · ⬜
 - ✅ API rate limiting: 120/min per IP, 10/min for imports, AI and demo seeding; `429` with `Retry-After`
 - ✅ Secrets in Secret Manager only: Cloud Run injects `GEMINI_API_KEY` via `secretKeyRef`; production never
   reads `.env`; `.env` files are git-ignored; gitleaks runs in CI
-- ✅ Production config refuses demo auth, the memory store and wildcard CORS
+- ✅ Demo mode is off by default and only turns on with `DEMO_MODE=true`. It adds a labeled role switcher on top of
+  real Firebase Auth (a Bearer token always wins, demo users are forced to `demo-` ids). Production config refuses
+  the memory store and wildcard CORS
 - ✅ Participant ids masked for staff (`P-••••42`); logs carry ids only, never names or phones
 - ✅ Gemini boundary test: the AI module cannot import commands, stores or pathways
 - 🟡 Least-privilege service account `loopcloser-api` (Firestore user + one secret)
-- ⬜ Real accounts and role assignment (`api/scripts/set_role.py`); decide demo access for judges
+- ⬜ Real accounts and role assignment (`api/scripts/set_role.py`)
 
 ### 2. Shipping
 - ✅ GitHub Actions CI: ruff lint and format, pytest, ESLint, TypeScript, vitest, Next build,
@@ -116,7 +141,7 @@ Status: ✅ done in code and tested · 🟡 configured, applied at deploy · ⬜
 - ⬜ Firestore queries with indexes once the case list moves off full scans (indexes already declared)
 
 ### 4. Traffic
-- 🟡 Cloud Run autoscaling: min 0 instances (no idle cost), max 5, concurrency 80, startup CPU boost
+- 🟡 Cloud Run autoscaling: min 0 instances (no idle cost), max 1 for the demo (MAX_INSTANCES in deploy/project.env), concurrency 80, startup CPU boost
 - ✅ Health checks used as Cloud Run startup and liveness probes
 - ⬜ Load test with the synthetic cohort before the demo; set min 1 only during judging
 

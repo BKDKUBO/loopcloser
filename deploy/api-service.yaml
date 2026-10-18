@@ -1,6 +1,6 @@
 # Cloud Run service for the API. Applied by deploy/deploy.sh or the Deploy workflow:
 #   gcloud run services replace deploy/api-service.yaml --region asia-southeast1
-# Placeholders ${PROJECT_ID}, ${IMAGE} and ${WEB_ORIGIN} are filled in with envsubst
+# Placeholders ${PROJECT_ID}, ${IMAGE}, ${WEB_ORIGIN}, ${DEMO_MODE} and ${MAX_INSTANCES} are filled in with envsubst
 # (values from deploy/project.env, LoopCloser's own project).
 apiVersion: serving.knative.dev/v1
 kind: Service
@@ -14,7 +14,7 @@ spec:
       annotations:
         # Traffic: scale to zero when idle (no cost), cap instances to bound spend.
         autoscaling.knative.dev/minScale: "0"
-        autoscaling.knative.dev/maxScale: "5"
+        autoscaling.knative.dev/maxScale: "${MAX_INSTANCES}"
         run.googleapis.com/cpu-throttling: "true"
         run.googleapis.com/startup-cpu-boost: "true"
     spec:
@@ -33,8 +33,11 @@ spec:
           env:
             - name: APP_ENV
               value: production
-            - name: AUTH_MODE
-              value: firebase
+            # Firebase Auth is always on. DEMO_MODE adds the labeled role switcher for judges.
+            - name: DEMO_MODE
+              value: "${DEMO_MODE}"
+            - name: FIREBASE_PROJECT_ID
+              value: ${PROJECT_ID}
             - name: STORAGE_BACKEND
               value: firestore
             - name: FIRESTORE_DATABASE

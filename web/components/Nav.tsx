@@ -9,14 +9,21 @@ export function Nav() {
   const label = ROLES.find((r) => r.id === s.role)?.label;
   return (
     <header>
-      <div className="banner" role="status">Demo mode. All records are fictional (SIMULATED).</div>
+      {s.demoMode ? (
+        <div className="banner" role="status">
+          <strong>Demo mode.</strong> Role switcher for judges. All records are fictional (SIMULATED).
+          {" "}In production, staff sign in with real Firebase Auth accounts and role permissions.
+        </div>
+      ) : (
+        <div className="banner" role="status">All records are fictional (SIMULATED).</div>
+      )}
       <nav aria-label="Main">
         <strong>LoopCloser</strong>
         <Link href="/today">Today</Link>
         <Link href="/pathways">Pathways</Link>
         <Link href="/status">System status</Link>
         <span style={{ marginLeft: "auto" }} className="muted">
-          {s.role ? `Signed in as ${label}` : "Not signed in"}
+          {s.role ? `Signed in as ${label}${s.isDemoUser ? " (demo account)" : ""}` : "Not signed in"}
         </span>
         {s.role ? <button onClick={() => s.signOut()}>Sign out</button> : <Link href="/">Sign in</Link>}
       </nav>

@@ -6,10 +6,10 @@ install:
 	cd firestore-tests && npm install
 
 api:
-	cd api && APP_ENV=local AUTH_MODE=demo .venv/bin/uvicorn loopcloser.main:create_app --factory --reload --port 8080
+	cd api && APP_ENV=local DEMO_MODE=true .venv/bin/uvicorn loopcloser.main:create_app --factory --reload --port 8080
 
 web:
-	cd web && NEXT_PUBLIC_API_URL=http://localhost:8080 NEXT_PUBLIC_AUTH_MODE=demo npm run dev
+	cd web && NEXT_PUBLIC_API_URL=http://localhost:8080 npm run dev
 
 seed:
 	curl -s -X POST localhost:8080/api/demo/seed -H 'x-demo-role: supervisor' -H 'content-type: application/json' -d '{"n":1000}'

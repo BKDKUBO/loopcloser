@@ -75,7 +75,8 @@ FIRST_NAMES = [
 LAST_INITIALS = list("ABCDEGLMNPRSTV")
 LOCATIONS = ["Site A", "Site B", "Site C", "Site D", "Site E"]
 AGE_BANDS = ["18-29", "30-39", "40-49", "50-59", "60-69", "70+"]
-STAFF = ["worker-01", "worker-02", "worker-03", "coord-01", "coord-02"]
+# Demo staff accounts (match the demo role switcher users).
+STAFF = ["demo-worker-01", "demo-worker-02", "demo-worker-03", "demo-coord-01", "demo-coord-02"]
 SUPPORTED_LANGS = ["en", "fil"]
 ASSIST_LANGS = ["ceb", "ilo", "hil"]  # known languages that need a navigator
 
@@ -236,7 +237,7 @@ def _edge_cases(rows: list[dict], anchor: date) -> list[dict]:
             "evidence_ref": "",
             "red_flag": "no",
             "barrier": "",
-            "owner": "coord-01",
+            "owner": "demo-coord-01",
             "data_label": LABEL,
         }
         r.update(kw)

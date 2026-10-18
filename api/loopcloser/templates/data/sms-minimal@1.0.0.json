@@ -1,0 +1,26 @@
+{
+  "id": "sms-minimal",
+  "version": "1.0.0",
+  "name": "Minimal SMS (no screening details)",
+  "channels": [
+    "sms"
+  ],
+  "part_order": [
+    "body"
+  ],
+  "placeholders": [
+    "clinic_phone"
+  ],
+  "lookups": {},
+  "languages": {
+    "en": {
+      "body": "Hello, please call the clinic about your recent visit: {clinic_phone}."
+    },
+    "fil": {
+      "body": "Magandang araw, pakitawagan ang klinika tungkol sa iyong huling pagbisita: {clinic_phone}."
+    }
+  },
+  "kind": "official",
+  "status": "pending_review",
+  "review_note": "Pending clinical review and native Filipino speaker review. Not yet approved for real patients."
+}

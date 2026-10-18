@@ -1,0 +1,27 @@
+{
+  "id": "emergency-guidance",
+  "version": "1.0.0",
+  "name": "Emergency guidance (red flag)",
+  "channels": [
+    "patient_view",
+    "sms"
+  ],
+  "part_order": [
+    "body"
+  ],
+  "placeholders": [
+    "clinic_phone"
+  ],
+  "lookups": {},
+  "languages": {
+    "en": {
+      "body": "If this is an emergency, call 911 now or go to the nearest emergency room. A health worker has been told and will contact you. Clinic: {clinic_phone}."
+    },
+    "fil": {
+      "body": "Kung ito ay emergency, tumawag agad sa 911 o pumunta sa pinakamalapit na emergency room. Naabisuhan na ang isang health worker at kokontakin ka niya. Klinika: {clinic_phone}."
+    }
+  },
+  "kind": "official",
+  "status": "pending_review",
+  "review_note": "Pending clinical review and native Filipino speaker review. Not yet approved for real patients."
+}

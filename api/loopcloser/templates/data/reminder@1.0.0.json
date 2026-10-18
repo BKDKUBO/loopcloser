@@ -1,0 +1,27 @@
+{
+  "id": "reminder",
+  "version": "1.0.0",
+  "name": "Follow-up reminder",
+  "channels": [
+    "sms"
+  ],
+  "part_order": [
+    "body"
+  ],
+  "placeholders": [
+    "due_date",
+    "clinic_phone"
+  ],
+  "lookups": {},
+  "languages": {
+    "en": {
+      "body": "Reminder from your clinic: your follow-up step is due by {due_date}. Reply or call {clinic_phone} if you need help booking."
+    },
+    "fil": {
+      "body": "Paalala mula sa iyong klinika: ang iyong follow-up ay dapat magawa bago ang {due_date}. Sumagot o tumawag sa {clinic_phone} kung kailangan mo ng tulong sa pag-book."
+    }
+  },
+  "kind": "official",
+  "status": "pending_review",
+  "review_note": "Pending clinical review and native Filipino speaker review. Not yet approved for real patients."
+}

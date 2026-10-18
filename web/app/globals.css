@@ -17,3 +17,17 @@ button.primary { background: var(--accent); color: white; border-color: var(--ac
 table { border-collapse: collapse; width: 100%; }
 th, td { text-align: left; border-bottom: 1px solid var(--line); padding: 6px; vertical-align: top; }
 .error { color: var(--bad); font-weight: 600; }
+.demo { border: 2px dashed #e5c454; background: #fffdf3; }
+.tier-urgent { color: #fff; background: var(--bad); border-color: var(--bad); }
+.tier-high { color: #7c2d12; background: #ffedd5; }
+.tier-moderate { color: #1e3a8a; background: #dbeafe; }
+.tier-routine { color: #374151; background: #f3f4f6; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+.sticky { position: sticky; top: 8px; background: #fff; border: 2px solid var(--accent); border-radius: 8px; padding: 12px; }
+.detail { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 800px) { .detail { grid-template-columns: 1fr; } }
+details summary { cursor: pointer; color: var(--accent); }
+.msg { background: #f9fafb; border-left: 4px solid var(--accent); padding: 8px; margin: 8px 0; }
+.ok { color: #065f46; font-weight: 600; }
+input, textarea { font-size: 16px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; }
+.ladder li.done { color: #065f46; } .ladder li.not-needed { color: var(--muted, #6b7280); text-decoration: line-through; } .ladder li.due { color: var(--bad); font-weight: 600; }

@@ -4,7 +4,8 @@ from datetime import UTC, datetime
 import pytest
 
 os.environ.setdefault("APP_ENV", "test")
-os.environ.setdefault("AUTH_MODE", "demo")
+os.environ.pop("AUTH_MODE", None)
+os.environ.setdefault("DEMO_MODE", "true")
 os.environ["GEMINI_API_KEY"] = ""  # tests never call Gemini
 os.environ["DOTENV_DISABLED"] = "1"
 

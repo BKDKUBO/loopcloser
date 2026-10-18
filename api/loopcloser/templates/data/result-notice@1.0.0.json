@@ -1,0 +1,74 @@
+{
+  "id": "result-notice",
+  "version": "1.0.0",
+  "name": "Result notice (4 parts)",
+  "channels": [
+    "patient_view",
+    "sms"
+  ],
+  "part_order": [
+    "what_happened",
+    "what_it_does_not_mean",
+    "what_to_do_next",
+    "when_to_seek_urgent_help"
+  ],
+  "placeholders": [
+    "screening_type",
+    "pathway_id",
+    "due_date",
+    "clinic_phone"
+  ],
+  "lookups": {
+    "en": {
+      "screening_name": {
+        "fit": "stool test (FIT)",
+        "bp": "blood pressure check",
+        "cervical": "cervical screening",
+        "generic": "screening test",
+        "symptom": "symptom check"
+      },
+      "next_step": {
+        "abnormal-generic": "see a primary-care doctor or go to your referral",
+        "borderline": "repeat the screening test",
+        "fit-positive": "have a colonoscopy (a repeat stool test is not enough)",
+        "bp-elevated": "have your blood pressure measured again on another day",
+        "cervical-abnormal": "see a clinician for a follow-up check",
+        "new-symptoms": "talk to a health worker about your symptoms"
+      }
+    },
+    "fil": {
+      "screening_name": {
+        "fit": "stool test (FIT)",
+        "bp": "pagsukat ng presyon ng dugo",
+        "cervical": "cervical screening",
+        "generic": "screening test",
+        "symptom": "pagsusuri ng sintomas"
+      },
+      "next_step": {
+        "abnormal-generic": "magpatingin sa doktor sa primary care o pumunta sa iyong referral",
+        "borderline": "ulitin ang screening test",
+        "fit-positive": "magpa-colonoscopy (hindi sapat ang pag-ulit ng stool test)",
+        "bp-elevated": "ipasukat muli ang iyong presyon ng dugo sa ibang araw",
+        "cervical-abnormal": "magpatingin sa clinician para sa follow-up na pagsusuri",
+        "new-symptoms": "kausapin ang isang health worker tungkol sa iyong mga sintomas"
+      }
+    }
+  },
+  "languages": {
+    "en": {
+      "what_happened": "Your recent {screening_name} result needs a follow-up step.",
+      "what_it_does_not_mean": "This is not a diagnosis. It means a health worker needs to check further.",
+      "what_to_do_next": "Next step: {next_step}. Please do this by {due_date}. We can help you book.",
+      "when_to_seek_urgent_help": "If you feel very unwell or have new or severe symptoms, call 911 or go to the nearest emergency room now. Clinic: {clinic_phone}."
+    },
+    "fil": {
+      "what_happened": "Ang resulta ng iyong {screening_name} kamakailan ay nangangailangan ng susunod na hakbang.",
+      "what_it_does_not_mean": "Hindi ito diagnosis. Ibig sabihin nito, kailangan pang suriin ng isang health worker.",
+      "what_to_do_next": "Susunod na hakbang: {next_step}. Pakigawa ito bago ang {due_date}. Matutulungan ka naming mag-book.",
+      "when_to_seek_urgent_help": "Kung masama ang pakiramdam mo o may bago o matinding sintomas, tumawag sa 911 o pumunta agad sa pinakamalapit na emergency room. Klinika: {clinic_phone}."
+    }
+  },
+  "kind": "official",
+  "status": "pending_review",
+  "review_note": "Pending clinical review and native Filipino speaker review. Not yet approved for real patients."
+}

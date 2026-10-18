@@ -40,6 +40,18 @@ class CaseView(BaseModel):
     closure_reason: str | None = None
     closure_evidence: str | None = None
     signed_off_by: str | None = None
+    # Participant context used by priority rules (from the upload, never from AI)
+    language: str = "en"
+    comorbidity: bool = False
+    location: str | None = None
+    age_band: str | None = None
+    phone_valid: bool = True
+    barriers_open: list[str] = Field(default_factory=list)
+    no_show_count: int = 0
+    reached_contacts: int = 0
+    appointment: dict[str, Any] | None = None
+    priority_override: dict[str, Any] | None = None
+    ladder_steps: list[str] = Field(default_factory=list)
     # Safety
     automation_paused: bool = False
     red_flag_open: bool = False
@@ -75,6 +87,11 @@ def _apply(view: CaseView | None, ev: Event) -> CaseView:
             due_date=p.get("due_date"),
             owner=p.get("owner"),
             patient_uid=p.get("patient_uid"),
+            language=p.get("language") or "en",
+            comorbidity=bool(p.get("comorbidity", False)),
+            location=p.get("location"),
+            age_band=p.get("age_band"),
+            phone_valid=bool(p.get("phone_valid", True)),
             synthetic=bool(p.get("synthetic", False)),
             data_label=p.get("data_label"),
             opened_at=ev.at,
@@ -94,6 +111,10 @@ def _apply(view: CaseView | None, ev: Event) -> CaseView:
         v.state = CaseState(p["to"])
         if v.state == CaseState.ESCALATED:
             v.escalation_level += 1
+        if v.state == CaseState.NO_SHOW:
+            v.no_show_count += 1
+        if "appointment" in p:
+            v.appointment = p["appointment"]
         if "next_action" in p:
             v.next_action = p["next_action"]
         if "due_date" in p:
@@ -102,7 +123,9 @@ def _apply(view: CaseView | None, ev: Event) -> CaseView:
             v.red_flag_open = False
     elif ev.type == EventType.CONTACT_ATTEMPT:
         v.contact_attempts += 1
-        if p.get("result") != "reached":
+        if p.get("result") == "reached":
+            v.reached_contacts += 1
+        else:
             v.failed_contact_attempts += 1
         v.last_contact_attempt = ev.at
     elif ev.type == EventType.RED_FLAG_REPORTED:
@@ -120,6 +143,26 @@ def _apply(view: CaseView | None, ev: Event) -> CaseView:
         v.closure_reason = p["closure_reason"]
         v.closure_evidence = p.get("evidence_ref")
         v.signed_off_by = p.get("signed_off_by")
+    elif ev.type == EventType.BARRIER_REPORTED:
+        if p["barrier"] not in v.barriers_open:
+            v.barriers_open.append(p["barrier"])
+    elif ev.type == EventType.BARRIER_RESOLVED:
+        v.barriers_open = [b for b in v.barriers_open if b != p["barrier"]]
+    elif ev.type == EventType.PRIORITY_OVERRIDDEN:
+        v.priority_override = (
+            {
+                "tier": p["tier"],
+                "reason": p["reason"],
+                "note": p["note"],
+                "by": ev.actor.id,
+                "at": ev.at.isoformat(),
+            }
+            if p.get("tier")
+            else None
+        )
+    elif ev.type == EventType.LADDER_STEP:
+        if p["step"] not in v.ladder_steps:
+            v.ladder_steps.append(p["step"])
     # NOTIFICATION_STATUS and NOTE_ADDED never change state on their own.
     v.updated_at = ev.at
     v.version = ev.seq

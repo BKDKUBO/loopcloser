@@ -37,6 +37,8 @@ class Perm(StrEnum):
     PATHWAY_READ = "pathway:read"
     DASHBOARD_READ = "dashboard:read"
     PATIENT_RESPOND = "patient:respond"
+    PRIORITY_OVERRIDE = "priority:override"
+    MESSAGE_SEND = "message:send"
     ADMIN = "admin"  # rebuild projections, seed demo data
 
 
@@ -48,6 +50,7 @@ _WORKER = {
     Perm.RED_FLAG_REPORT,
     Perm.EVENTS_READ,
     Perm.PATHWAY_READ,
+    Perm.MESSAGE_SEND,
 }
 _COORDINATOR = _WORKER | {
     Perm.CASE_READ_ALL,
@@ -58,7 +61,7 @@ _COORDINATOR = _WORKER | {
     Perm.IMPORT_CSV,
     Perm.DASHBOARD_READ,
 }
-_SUPERVISOR = _COORDINATOR | {Perm.AUTOMATION_RESUME, Perm.AUDIT_READ, Perm.ADMIN}
+_SUPERVISOR = _COORDINATOR | {Perm.AUTOMATION_RESUME, Perm.AUDIT_READ, Perm.ADMIN, Perm.PRIORITY_OVERRIDE}
 _PROGRAM_MANAGER = {
     Perm.CASE_READ_ALL,
     Perm.EVENTS_READ,

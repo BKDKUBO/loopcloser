@@ -18,8 +18,7 @@ def _bool(name: str, default: bool = False) -> bool:
 @dataclass(frozen=True)
 class Config:
     env: str  # "local" | "test" | "production"
-    auth_mode: str  # "firebase" | "demo"
-    allow_demo_auth_in_production: bool
+    demo_mode: bool  # explicit DEMO_MODE=true: role switcher for judges, next to real Firebase Auth
     storage_backend: str  # "memory" | "firestore"
     firebase_project: str | None
     cors_origins: tuple[str, ...]
@@ -29,6 +28,12 @@ class Config:
     gemini_model: str
     escalate_after_failed_contacts: int
     version: str
+    clinic_phone: str = "(02) 0000-0000 (demo number)"
+    ladder_json: str | None = None
+
+    @property
+    def auth_mode(self) -> str:
+        return "firebase+demo" if self.demo_mode else "firebase"
 
     @property
     def is_production(self) -> bool:
@@ -50,8 +55,7 @@ def load_config() -> Config:
             pass
     cfg = Config(
         env=env,
-        auth_mode=os.getenv("AUTH_MODE", "firebase" if env == "production" else "demo").lower(),
-        allow_demo_auth_in_production=_bool("ALLOW_DEMO_AUTH_IN_PRODUCTION"),
+        demo_mode=_bool("DEMO_MODE", False),
         storage_backend=os.getenv("STORAGE_BACKEND", "memory").lower(),
         firebase_project=os.getenv("FIREBASE_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT"),
         cors_origins=tuple(
@@ -63,19 +67,19 @@ def load_config() -> Config:
         gemini_model=os.getenv("GEMINI_MODEL", "gemini-3.8-flash"),
         escalate_after_failed_contacts=int(os.getenv("ESCALATE_AFTER_FAILED_CONTACTS", "3")),
         version=os.getenv("APP_VERSION", os.getenv("K_REVISION", "dev")),
+        clinic_phone=os.getenv("CLINIC_PHONE", "(02) 0000-0000 (demo number)"),
+        ladder_json=os.getenv("LADDER_JSON") or None,
     )
     validate(cfg)
     return cfg
 
 
 def validate(cfg: Config) -> None:
-    if cfg.auth_mode not in {"firebase", "demo"}:
-        raise ConfigError(f"AUTH_MODE must be firebase or demo, got {cfg.auth_mode}")
+    if os.getenv("AUTH_MODE") or os.getenv("ALLOW_DEMO_AUTH_IN_PRODUCTION"):
+        raise ConfigError("AUTH_MODE and ALLOW_DEMO_AUTH_IN_PRODUCTION were removed. Use DEMO_MODE=true|false.")
     if cfg.storage_backend not in {"memory", "firestore"}:
         raise ConfigError(f"STORAGE_BACKEND must be memory or firestore, got {cfg.storage_backend}")
     if cfg.is_production:
-        if cfg.auth_mode == "demo" and not cfg.allow_demo_auth_in_production:
-            raise ConfigError("Demo auth is disabled in production. Set AUTH_MODE=firebase.")
         if cfg.storage_backend != "firestore":
             raise ConfigError("Production must use STORAGE_BACKEND=firestore.")
         if "*" in cfg.cors_origins:

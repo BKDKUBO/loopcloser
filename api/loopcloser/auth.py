@@ -1,10 +1,12 @@
 """Authentication and role-based authorization.
 
-firebase mode: the web app signs in with Firebase Auth and sends the ID token as
-  "Authorization: Bearer <token>". We verify it with the Firebase Admin SDK and read
-  the role from the custom claim "role" (set with scripts/set_role.py).
-demo mode (local and the judged demo only): a role switcher sends X-Demo-Role and
-  X-Demo-User. Refused in production unless ALLOW_DEMO_AUTH_IN_PRODUCTION=true.
+Real auth (always on): the web app signs in with Firebase Auth and sends the ID token
+  as "Authorization: Bearer <token>". We verify it with the Firebase Admin SDK and read
+  the role from the custom claim "role" (set with scripts/set_role.py). A bearer token,
+  when present, is always verified, even in demo mode.
+Demo mode (only with the explicit setting DEMO_MODE=true, for judges): requests without
+  a token may pick a role with X-Demo-Role. Demo users get ids starting with "demo-" and
+  are marked demo=True in every response and event.
 """
 
 from __future__ import annotations
@@ -62,14 +64,15 @@ def _parse_role(value: str | None) -> Role:
 
 
 def authenticate(request: Request) -> Principal:
-    cfg = get_config()
-    if cfg.auth_mode == "demo":
-        role = _parse_role(request.headers.get("x-demo-role"))
-        uid = (request.headers.get("x-demo-user") or f"demo-{role.value}")[:64]
-        return Principal(uid=uid, role=role, demo=True)
-
+    cfg = getattr(request.app.state, "cfg", None) or get_config()
     header = request.headers.get("authorization", "")
-    if not header.lower().startswith("bearer "):
+    has_token = header.lower().startswith("bearer ")
+    if not has_token and cfg.demo_mode and request.headers.get("x-demo-role"):
+        role = _parse_role(request.headers.get("x-demo-role"))
+        suffix = (request.headers.get("x-demo-user") or role.value)[:48]
+        uid = suffix if suffix.startswith("demo-") else f"demo-{suffix}"
+        return Principal(uid=uid, role=role, demo=True)
+    if not has_token:
         raise HTTPException(status_code=401, detail="Sign in required.", headers={"WWW-Authenticate": "Bearer"})
     try:
         claims = (_verifier or _firebase_verifier)(header[7:].strip())

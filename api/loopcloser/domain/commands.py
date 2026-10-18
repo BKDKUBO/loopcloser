@@ -13,6 +13,11 @@ Guard rule ids (also listed in docs/guard-rules.md):
   ESC-1   Escalate after N failed contact attempts (configurable).
   CLOSE-1 Closing needs an authorized human, a closure reason, and evidence or sign-off.
   CLOSE-2 Only coordinator or supervisor can close or sign off.
+  MSG-3   Official patient messages must use an approved template (id, version, language). No free text, no AI text.
+  PRI-1   Only a supervisor overrides priority, with a reason code and a note.
+  PRI-2   Priority cannot be lowered below Urgent while a red flag is open.
+  BAR-1   Barriers come from a fixed list and each one is logged as an event.
+  LAD-1   Escalation ladder steps run once each, skip paused or closed cases, and log an event.
 """
 
 from __future__ import annotations
@@ -26,9 +31,20 @@ from ..store.base import CaseRepository
 from .case import CaseView, project
 from .errors import GuardViolation, NotFound
 from .events import SYSTEM_ACTOR, Actor, Event, EventType
+from .priority import TIERS
 from .roles import CLOSE_SIGNOFF_ROLES, Role
 from .states import RED_FLAG_STATES, REQUIRED_FIELDS, CaseState, is_allowed
 
+BARRIER_TYPES = ("transport", "cost", "work", "language", "digital", "childcare", "fear")
+OVERRIDE_REASONS = (
+    "duplicate",
+    "already_treated",
+    "worsening_symptoms",
+    "completed_elsewhere",
+    "data_error",
+    "clinical_judgment_documented",
+    "other",
+)
 NON_HUMAN_TARGETS = frozenset({CaseState.ESCALATED, CaseState.AWAITING_HUMAN_REVIEW})
 UNDERSTANDING_SOURCES = frozenset({"understanding_check", "staff_confirmed"})
 
@@ -111,6 +127,7 @@ def open_case(
     owner: str | None = None,
     patient_uid: str | None = None,
     synthetic: bool = False,
+    barriers: list[str] | None = None,
     now: datetime | None = None,
 ) -> CaseView:
     if repo.load_events(case_id):
@@ -142,10 +159,18 @@ def open_case(
             "patient_uid": patient_uid,
             "synthetic": synthetic,
             "data_label": "SIMULATED" if synthetic else None,
+            "language": screening.get("language") or "en",
+            "comorbidity": bool(screening.get("comorbidity", False)),
+            "location": screening.get("location"),
+            "age_band": screening.get("age_band"),
+            "phone_valid": bool(screening.get("phone_valid", True)),
         },
         rule_id=f"PATHWAY:{pathway.key}",
         fields_used=("screening_type", "result", "severity", "screened_at"),
     )
+    for barrier in barriers or []:
+        _check_barrier(barrier)
+        b.add(EventType.BARRIER_REPORTED, actor, {"barrier": barrier, "source": "upload"}, rule_id="BAR-1")
     if red_flag or pathway.red_flag_route:
         _red_flag_events(b, actor, source="upload" if red_flag else "pathway", code="flagged_at_intake")
     return b.commit()
@@ -231,6 +256,11 @@ def record_notification(
 ) -> CaseView:
     if status not in {"queued", "sent", "delivered", "opened", "failed"}:
         raise GuardViolation(f"unknown notification status {status}")
+    from ..templates.library import default_templates
+
+    tpl = default_templates().get(template_id, template_version)
+    if tpl is None or language not in tpl.languages:
+        raise GuardViolation("Official messages must use an approved template and language.", rule_id="MSG-3")
     b = _load(repo, case_id, now)
     v = b.view
     _require_not_paused(v, actor)
@@ -397,6 +427,84 @@ def add_note(repo: CaseRepository, case_id: str, *, actor: Actor, text: str, now
         raise GuardViolation("Empty note.")
     b = _load(repo, case_id, now)
     b.add(EventType.NOTE_ADDED, actor, {"text": text[:2000]})
+    return b.commit()
+
+
+def _check_barrier(barrier: str) -> None:
+    if barrier not in BARRIER_TYPES:
+        raise GuardViolation(f"unknown barrier {barrier}", rule_id="BAR-1")
+
+
+def report_barrier(
+    repo: CaseRepository,
+    case_id: str,
+    *,
+    actor: Actor,
+    barrier: str,
+    source: str = "staff",
+    now: datetime | None = None,
+) -> CaseView:
+    _check_barrier(barrier)
+    b = _load(repo, case_id, now)
+    if b.view.state == CaseState.CLOSED:
+        raise GuardViolation("Case is closed.", rule_id="SM-1")
+    b.add(EventType.BARRIER_REPORTED, actor, {"barrier": barrier, "source": source}, rule_id="BAR-1")
+    return b.commit()
+
+
+def resolve_barrier(
+    repo: CaseRepository, case_id: str, *, actor: Actor, barrier: str, resolution: str, now: datetime | None = None
+) -> CaseView:
+    if not actor.is_human:
+        raise GuardViolation("Only a human resolves barriers.", rule_id="AUTO-1")
+    if not resolution.strip():
+        raise GuardViolation("Describe how the barrier was resolved.", rule_id="BAR-1")
+    b = _load(repo, case_id, now)
+    if barrier not in b.view.barriers_open:
+        raise GuardViolation(f"No open {barrier} barrier.", rule_id="BAR-1")
+    b.add(EventType.BARRIER_RESOLVED, actor, {"barrier": barrier, "resolution": resolution[:500]}, rule_id="BAR-1")
+    return b.commit()
+
+
+def override_priority(
+    repo: CaseRepository,
+    case_id: str,
+    *,
+    actor: Actor,
+    tier: str | None,
+    reason: str,
+    note: str,
+    now: datetime | None = None,
+) -> CaseView:
+    """Set (or clear, with tier=None) a priority override. Audited as an event."""
+    if not actor.is_human or actor.role != Role.SUPERVISOR:
+        raise GuardViolation("Only a supervisor can override priority.", rule_id="PRI-1")
+    if tier is not None and tier not in TIERS:
+        raise GuardViolation(f"unknown tier {tier}", rule_id="PRI-1")
+    if reason not in OVERRIDE_REASONS or not note.strip():
+        raise GuardViolation("Pick a reason and add a note.", rule_id="PRI-1")
+    b = _load(repo, case_id, now)
+    v = b.view
+    if v.state == CaseState.CLOSED:
+        raise GuardViolation("Case is closed.", rule_id="SM-1")
+    if v.red_flag_open and tier not in ("urgent", None):
+        raise GuardViolation("Cannot lower priority while a red flag is open.", rule_id="PRI-2")
+    if v.red_flag_open and tier is None:
+        raise GuardViolation("Cannot clear an override while a red flag is open.", rule_id="PRI-2")
+    b.add(
+        EventType.PRIORITY_OVERRIDDEN,
+        actor,
+        {"tier": tier, "reason": reason, "note": note[:1000], "previous": v.priority_override},
+        rule_id="PRI-1",
+    )
+    return b.commit()
+
+
+def record_ladder_step(
+    repo: CaseRepository, case_id: str, *, step: str, day: int, action: str, now: datetime | None = None
+) -> CaseView:
+    b = _load(repo, case_id, now)
+    b.add(EventType.LADDER_STEP, SYSTEM_ACTOR, {"step": step, "day": day, "action": action}, rule_id="LAD-1")
     return b.commit()
 
 

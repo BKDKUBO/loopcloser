@@ -88,7 +88,7 @@ def test_worker_and_automation_cannot_close(repo, lib, coord, worker):
 def test_message_never_moves_past_patient_notified(repo, lib, coord):
     _open(repo, lib, coord)
     _walk_to(repo, coord, S.REVIEWED)
-    kw = dict(channel="sms", template_id="T-notify", template_version="1.0.0", language="fil", now=NOW)
+    kw = dict(channel="sms", template_id="sms-minimal", template_version="1.0.0", language="fil", now=NOW)
     v = cmd.record_notification(repo, "C-1", status="delivered", actor=AUTOMATION_ACTOR, **kw)
     assert v.state == S.PATIENT_NOTIFIED
     v = cmd.record_notification(repo, "C-1", status="opened", actor=AUTOMATION_ACTOR, **kw)
@@ -168,7 +168,7 @@ def test_red_flag_pauses_automation_and_needs_human(repo, lib, coord, supervisor
             "C-1",
             status="sent",
             channel="sms",
-            template_id="T-reminder",
+            template_id="reminder",
             template_version="1.0.0",
             language="en",
             actor=AUTOMATION_ACTOR,

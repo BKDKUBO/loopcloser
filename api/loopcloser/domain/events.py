@@ -43,6 +43,10 @@ class EventType(StrEnum):
     AUTOMATION_RESUMED = "automation_resumed"
     NOTE_ADDED = "note_added"
     CASE_CLOSED = "case_closed"
+    BARRIER_REPORTED = "barrier_reported"
+    BARRIER_RESOLVED = "barrier_resolved"
+    PRIORITY_OVERRIDDEN = "priority_overridden"
+    LADDER_STEP = "ladder_step"
 
 
 class Event(BaseModel):
