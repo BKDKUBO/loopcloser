@@ -7,7 +7,8 @@ exposed through the API. Run from a machine with gcloud application default cred
     GOOGLE_CLOUD_QUOTA_PROJECT=loopcloser-bkdkubo \\
       api/.venv/bin/python api/scripts/reset_demo.py --project loopcloser-bkdkubo --yes
 
-Then reseed with the supervisor demo button or POST /api/demo/seed.
+The API picks up the reset clock within 30 seconds. Then reseed with the supervisor demo button
+or POST /api/demo/seed.
 """
 
 from __future__ import annotations
@@ -33,7 +34,7 @@ def main() -> int:
 
     db = firestore.Client(project=a.project, database=a.database)
     cases = list(db.collection("cases").where(filter=FieldFilter("synthetic", "==", True)).stream())
-    real = db.collection("cases").where(filter=FieldFilter("synthetic", "==", False)).count().get()[0][0].value
+    real = int(db.collection("cases").where(filter=FieldFilter("synthetic", "==", False)).count().get()[0][0].value)
     print(f"{len(cases)} SIMULATED cases to delete; {real} real cases kept.")
     if not a.yes:
         print("Dry run. Add --yes to delete.")
@@ -56,7 +57,7 @@ def main() -> int:
         batch.commit()
     db.collection("meta").document("clock").set({"offset_days": 0, "reset": True})
     print(f"Deleted {deleted} SIMULATED cases and their events. Demo clock reset to today.")
-    print("Restart the API (or deploy) so it reloads the clock, then reseed.")
+    print("The API picks up the reset clock within 30 seconds. Then reseed.")
     return 0
 
 
