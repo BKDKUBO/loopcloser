@@ -2,7 +2,7 @@
 
 Nothing here has been run. The project `loopcloser-bkdkubo` already exists with billing, Firebase, the needed
 APIs, Firestore `(default)` with backups, the Gemini key in Secret Manager and a US$5/month budget alert
-(see `gcp-project.md`). InvoiceSentinel (`gen-lang-client-0252871691`) is never touched; the scripts refuse it.
+(see `gcp-project.md`). The InvoiceSentinel project is never touched; the scripts refuse its id.
 
 ## Steps
 
