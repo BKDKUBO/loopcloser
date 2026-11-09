@@ -17,7 +17,7 @@ Dry run. This would:
   2. Create service account ${SA} with roles/datastore.user
   3. Create the Firestore (default) database (${REGION}) with point-in-time recovery
   4. Create Artifact Registry repo ${REPO} and build ${IMAGE}
-  5. Grant ${SA} access to secret loopcloser-gemini-api-key (must already exist)
+  5. Enable Vertex AI and grant ${SA} roles/aiplatform.user (Gemini via Vertex, no API key)
   6. Deploy Cloud Run service loopcloser-api (min 0, max ${MAX_INSTANCES} instances, DEMO_MODE=${DEMO_MODE})
   7. Build the static web app and deploy Firebase Hosting (${WEB_ORIGIN}) + Firestore rules/indexes
 Set CONFIRM=yes to run.
@@ -45,8 +45,9 @@ gcloud firestore databases describe --database="(default)" >/dev/null 2>&1 || \
     --enable-pitr
 gcloud artifacts repositories describe "$REPO" --location "$REGION" >/dev/null 2>&1 || \
   gcloud artifacts repositories create "$REPO" --repository-format docker --location "$REGION"
-gcloud secrets add-iam-policy-binding loopcloser-gemini-api-key \
-  --member "serviceAccount:$SA" --role roles/secretmanager.secretAccessor --format=none
+gcloud services enable aiplatform.googleapis.com --project "$PROJECT_ID"
+gcloud projects add-iam-policy-binding "$PROJECT_ID" --member "serviceAccount:$SA" \
+  --role roles/aiplatform.user --condition=None --format=none
 
 # Builds run as their own small service account (new projects give the default one no rights).
 BUILD_SA="loopcloser-build@${PROJECT_ID}.iam.gserviceaccount.com"

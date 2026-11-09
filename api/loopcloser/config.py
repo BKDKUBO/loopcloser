@@ -1,7 +1,8 @@
 """Runtime settings from environment variables.
 
-Secrets (GEMINI_API_KEY) are injected by Cloud Run from Secret Manager
-(--set-secrets). In production we never read a .env file.
+Production calls Gemini through Vertex AI (GEMINI_BACKEND=vertex) with the Cloud Run service account, so
+it needs no API key. GEMINI_API_KEY (GEMINI_BACKEND=api_key) is only for local experiments.
+In production we never read a .env file.
 """
 
 from __future__ import annotations
@@ -30,6 +31,9 @@ class Config:
     version: str
     clinic_phone: str = "(02) 0000-0000 (demo number)"
     ladder_json: str | None = None
+    gemini_backend: str = "off"  # "vertex" | "api_key" | "off"
+    vertex_project: str | None = None
+    vertex_location: str = "global"
 
     @property
     def auth_mode(self) -> str:
@@ -69,6 +73,13 @@ def load_config() -> Config:
         version=os.getenv("APP_VERSION", os.getenv("K_REVISION", "dev")),
         clinic_phone=os.getenv("CLINIC_PHONE", "(02) 0000-0000 (demo number)"),
         ladder_json=os.getenv("LADDER_JSON") or None,
+        gemini_backend=(
+            os.getenv("GEMINI_BACKEND") or ("api_key" if (os.getenv("GEMINI_API_KEY") or "").strip() else "off")
+        )
+        .strip()
+        .lower(),
+        vertex_project=os.getenv("VERTEX_PROJECT") or os.getenv("GOOGLE_CLOUD_PROJECT"),
+        vertex_location=os.getenv("VERTEX_LOCATION", "global"),
     )
     validate(cfg)
     return cfg
@@ -77,6 +88,8 @@ def load_config() -> Config:
 def validate(cfg: Config) -> None:
     if os.getenv("AUTH_MODE") or os.getenv("ALLOW_DEMO_AUTH_IN_PRODUCTION"):
         raise ConfigError("AUTH_MODE and ALLOW_DEMO_AUTH_IN_PRODUCTION were removed. Use DEMO_MODE=true|false.")
+    if cfg.gemini_backend not in {"vertex", "api_key", "off"}:
+        raise ConfigError(f"GEMINI_BACKEND must be vertex, api_key or off, got {cfg.gemini_backend}")
     if cfg.storage_backend not in {"memory", "firestore"}:
         raise ConfigError(f"STORAGE_BACKEND must be memory or firestore, got {cfg.storage_backend}")
     if cfg.is_production:

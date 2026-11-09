@@ -2,9 +2,11 @@
 
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
+import { CallPrep } from "@/components/CallPrep";
 import { CaseActions } from "@/components/CaseActions";
 import { PriorityBadge, WhyPriority } from "@/components/Priority";
 import { RequireRole } from "@/components/RequireRole";
+import { SafetyLine } from "@/components/SafetyLine";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { humanState } from "@/lib/lanes";
@@ -163,6 +165,9 @@ function CaseDetail() {
             <WhyPriority p={c.priority} open />
             {s.role === "supervisor" && c.state !== "closed" && <OverrideForm c={c} onChange={changed} />}
           </section>
+          <CallPrep caseId={c.id} onLogged={changed}
+            disabledReason={c.state === "closed" ? "Case closed." : c.red_flag_open ? "Red flag open: a person handles this case, no AI drafts (rule AI-2)." : undefined} />
+          <SafetyLine pathway={`${c.pathway_id} v${c.pathway_version}`} />
           <Barriers c={c} onChange={changed} />
           <section aria-labelledby="lad"><h2 id="lad">Escalation ladder (day {c.day ?? 0})</h2>
             <ol className="ladder">{(c.ladder ?? []).map((st) => (

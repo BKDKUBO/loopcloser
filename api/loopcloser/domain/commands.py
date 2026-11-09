@@ -18,6 +18,10 @@ Guard rule ids (also listed in docs/guard-rules.md):
   PRI-2   Priority cannot be lowered below Urgent while a red flag is open.
   BAR-1   Barriers come from a fixed list and each one is logged as an event.
   LAD-1   Escalation ladder steps run once each, skip paused or closed cases, and log an event.
+  AI-1    AI drafts are requested by a human staff member, logged as an event, and never change the case.
+  AI-2    No AI drafts while a red flag is open or after a case is closed.
+  AI-3    A draft can be used only if every number and date in it was verified against the case record,
+          and each draft gets exactly one Use or Discard decision, by a human.
 """
 
 from __future__ import annotations
@@ -514,3 +518,74 @@ def rebuild(repo: CaseRepository, case_id: str) -> CaseView:
     if not events:
         raise NotFound(f"case {case_id} not found")
     return project(events)
+
+
+AI_DECISIONS = ("use", "discard")
+STAFF_ROLES_FOR_AI = frozenset({Role.WORKER, Role.COORDINATOR, Role.SUPERVISOR})
+
+
+def _check_ai_actor(actor: Actor) -> None:
+    if not actor.is_human or actor.role not in STAFF_ROLES_FOR_AI:
+        raise GuardViolation("Only staff can request or decide on AI drafts.", rule_id="AI-1")
+
+
+def check_ai_draft_allowed(repo: CaseRepository, case_id: str, *, actor: Actor) -> CaseView:
+    """Call before asking the model, so a refused request costs nothing."""
+    _check_ai_actor(actor)
+    v = rebuild(repo, case_id)
+    if v.state == CaseState.CLOSED:
+        raise GuardViolation("Case is closed.", rule_id="AI-2")
+    if v.red_flag_open or v.state in RED_FLAG_STATES:
+        raise GuardViolation("No AI drafts while a red flag is open. A human handles it.", rule_id="AI-2")
+    return v
+
+
+def record_ai_draft(
+    repo: CaseRepository, case_id: str, *, actor: Actor, payload: dict[str, Any], now: datetime | None = None
+) -> tuple[CaseView, int]:
+    """Log an AI draft. Returns the projection (unchanged apart from its version) and the draft's event seq."""
+    _check_ai_actor(actor)
+    b = _load(repo, case_id, now)
+    b.add(EventType.AI_DRAFT_CREATED, actor, payload, rule_id="AI-1")
+    seq = b.new[-1].seq
+    return b.commit(), seq
+
+
+def decide_ai_draft(
+    repo: CaseRepository, case_id: str, *, actor: Actor, draft_seq: int, decision: str, now: datetime | None = None
+) -> CaseView:
+    _check_ai_actor(actor)
+    if decision not in AI_DECISIONS:
+        raise GuardViolation("Decision must be use or discard.", rule_id="AI-3")
+    b = _load(repo, case_id, now)
+    draft = next((e for e in b.existing if e.seq == draft_seq and e.type == EventType.AI_DRAFT_CREATED), None)
+    if draft is None:
+        raise NotFound(f"draft {draft_seq} not found on case {case_id}")
+    if any(e.type == EventType.AI_DRAFT_DECISION and e.payload.get("draft_seq") == draft_seq for e in b.existing):
+        raise GuardViolation("This draft already has a decision.", rule_id="AI-3")
+    if decision == "use" and not draft.payload.get("verified"):
+        raise GuardViolation(
+            "This draft mentions numbers or dates that are not in the case record. Discard it.", rule_id="AI-3"
+        )
+    b.add(EventType.AI_DRAFT_DECISION, actor, {"draft_seq": draft_seq, "decision": decision}, rule_id="AI-3")
+    return b.commit()
+
+
+def latest_ai_draft(repo: CaseRepository, case_id: str) -> dict[str, Any] | None:
+    """The newest call-prep draft and its decision, for the case page."""
+    events = repo.load_events(case_id)
+    drafts = [e for e in events if e.type == EventType.AI_DRAFT_CREATED]
+    if not drafts:
+        return None
+    d = drafts[-1]
+    decision = next(
+        (e for e in events if e.type == EventType.AI_DRAFT_DECISION and e.payload.get("draft_seq") == d.seq), None
+    )
+    return {
+        "draft_seq": d.seq,
+        "at": d.at.isoformat(),
+        "by": d.actor.id,
+        **d.payload,
+        "decision": decision.payload["decision"] if decision else None,
+        "decided_by": decision.actor.id if decision else None,
+    }

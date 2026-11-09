@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { SafetyLine } from "@/components/SafetyLine";
 import { useSession } from "@/lib/auth";
 import { ROLES, type Role } from "@/lib/types";
 
@@ -18,6 +19,7 @@ export default function SignIn() {
       <h1 id="h">Sign in</h1>
       <p>LoopCloser makes sure every actionable screening result has a next action, an owner, a deadline,
         and a documented outcome. It is not a diagnostic tool.</p>
+      <SafetyLine />
 
       <h2>Staff sign-in</h2>
       <p className="muted">Real accounts use Firebase Auth. Your role (worker, coordinator, supervisor, program

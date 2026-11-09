@@ -20,7 +20,7 @@ spec:
     spec:
       containerConcurrency: 80
       timeoutSeconds: 60
-      # Least-privilege identity: Firestore user + access to one secret only.
+      # Least-privilege identity: Firestore user + Vertex AI user.
       serviceAccountName: loopcloser-api@${PROJECT_ID}.iam.gserviceaccount.com
       containers:
         - image: ${IMAGE}
@@ -50,12 +50,16 @@ spec:
               value: "120"
             - name: RATE_LIMIT_SENSITIVE_PER_MINUTE
               value: "10"
-            # Secret Manager only. Never put the key in env files, images or the repo.
-            - name: GEMINI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: loopcloser-gemini-api-key
-                  key: latest
+            # Gemini through Vertex AI with this service's own identity (roles/aiplatform.user). No API key.
+            # gemini-3.8-flash is served from the "global" Vertex location, not asia-southeast1.
+            - name: GEMINI_BACKEND
+              value: vertex
+            - name: GEMINI_MODEL
+              value: gemini-3.8-flash
+            - name: VERTEX_PROJECT
+              value: ${PROJECT_ID}
+            - name: VERTEX_LOCATION
+              value: global
           startupProbe:
             httpGet:
               path: /health

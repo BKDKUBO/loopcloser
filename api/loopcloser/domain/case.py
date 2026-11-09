@@ -163,7 +163,7 @@ def _apply(view: CaseView | None, ev: Event) -> CaseView:
     elif ev.type == EventType.LADDER_STEP:
         if p["step"] not in v.ladder_steps:
             v.ladder_steps.append(p["step"])
-    # NOTIFICATION_STATUS and NOTE_ADDED never change state on their own.
+    # NOTIFICATION_STATUS, NOTE_ADDED and the AI_DRAFT_* audit events never change state on their own.
     v.updated_at = ev.at
     v.version = ev.seq
     return v
