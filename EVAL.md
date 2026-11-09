@@ -42,7 +42,7 @@ was not changed for that check.
 | Live demo, from our test machine | `/health`, 5 requests | p50 321 ms (mostly network) |
 | Live demo | Today view as supervisor (`/api/today`), 5 requests | p50 961 ms, p95 4.0 s (first call slower) |
 | Live demo | One case detail, 5 requests | p50 352 ms, p95 615 ms |
-| Live demo | **Cold start**: first request after the API scaled to zero | **about 10.2 s** (observed 2026-11-09) |
+| Live demo | **Cold start**: first request after the API scaled to zero | **10.2 s** (old image, Nov 9, 11:2x PM) and **6.9 s** (new image, Nov 10, 12:08 AM Manila; Cloud Run log confirms a new instance) |
 
 Live timings were measured from our test machine, not from the Philippines, with read-only requests only
 (`--live-latency`), so they include network distance. The API runs at min 0 instances to cost nothing at idle,

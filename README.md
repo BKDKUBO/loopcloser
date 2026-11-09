@@ -92,7 +92,7 @@ published rules, so this checks that the code follows them, not clinical accurac
 | Guard rules (allow or block) | 26/26 correct, 0 unsafe actions allowed, 0 safe actions blocked |
 | Escalation after failed contacts | 4/4 correct |
 | API time per request (local, no network) | p50 4.5 ms |
-| Live demo, Today view | p50 about 1 s; cold start about 10 s |
+| Live demo, Today view | p50 about 1 s; cold start 7 to 10 s |
 | Database cost per patient lifecycle | 14 writes and about 35 reads, about US$0.00002 at list price |
 | AI call guide (live, Vertex AI) | 2.7 to 3.6 s per draft; about 420 to 470 input and 160 to 200 output tokens, about US$0.001 per draft |
 
