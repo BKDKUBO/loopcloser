@@ -22,7 +22,7 @@ from loopcloser.ai.verify import Verification, verify_draft
 log = logging.getLogger("loopcloser.ai")
 
 AI_LABEL = "AI draft. Not medical advice. A staff member must review it."
-PROMPT_VERSION = "call-prep@1"
+PROMPT_VERSION = "call-prep@2"
 SYSTEM_RULES = (
     "You help care-navigation staff. You only summarize or rephrase the facts given. "
     "Never give a diagnosis, treatment advice, urgency, priority, or a recommendation about clinical care. "
@@ -32,7 +32,8 @@ CALL_PREP_RULES = (
     SYSTEM_RULES + " You write a short guide that a health worker reads before phoning a patient about a "
     "screening follow-up. Use only the facts given. Every number and date you write must appear exactly in the "
     "facts; if a fact is missing, say it is not recorded. Do not invent phone numbers, names, clinics, times or "
-    "counts. Do not number the sections; use these four headings, each followed by one to three '-' bullets: "
+    "counts. Names and phone numbers are withheld on purpose; do not mention them or say they are missing. "
+    "Do not number the sections; use these four headings, each followed by one to three '-' bullets: "
     "Before you call, What to explain, Barriers to ask about, What to record after the call. "
     "Under 'What to explain', restate the next action exactly as given and say a clinician decides anything "
     "clinical. Never tell the patient their result is serious or not serious. Keep it under 160 words."

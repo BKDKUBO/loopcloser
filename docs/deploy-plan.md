@@ -1,6 +1,8 @@
 # Deploy plan
 
-**Status: deployed on 2026-10-18 (Asia/Manila) with DEMO_MODE=true.**
+**Status: deployed on 2026-10-18 (Asia/Manila) with DEMO_MODE=true. Updated 2026-11-09: API image `6745ef8`+ with
+the call-prep AI draft, Gemini via Vertex AI (`global`, service account `loopcloser-api` has roles/aiplatform.user;
+no API key env var), web released through the Firebase Hosting REST API with the same hosting config.**
 Live site https://loopcloser-bkdkubo.web.app, API https://loopcloser-api-ejilcnpasq-as.a.run.app.
 Created: Firebase web app "LoopCloser Web", service accounts `loopcloser-api` (Firestore user, one secret)
 and `loopcloser-build` (log writer, Artifact Registry writer, storage object viewer), Artifact Registry repo

@@ -59,7 +59,26 @@ Our database is in asia-southeast1, which is priced somewhat higher than us-cent
 order of magnitude. Not included: Today-view reads by staff, Cloud Run compute, and any Gemini calls (none in
 the judged flow).
 
+## AI call guide ("Prepare for the call"), live on Vertex AI
+
+Deployed 2026-11-09 (Manila). Model `gemini-3.8-flash`, Vertex AI location `global`, thinking level low.
+
+| Measure | Result |
+|---|---|
+| Live drafts on the deployed demo (smoke test) | 2 of 2 verified, 0 withheld |
+| Live drafts from our test machine before deploy | 4; 3 verified, 1 false alarm ("two" copied from the pathway text) that led to a fix in the checker; 2 of 2 verified after the fix |
+| Latency per draft, deployed | 2.7 s and 3.6 s (model time); about 4 s end to end |
+| Tokens per draft | 420 to 470 input, 160 to 200 output, 0 thinking |
+| Cost per draft | about US$0.001 at Vertex list price (US$0.75 / US$3.75 per 1M input / output tokens through Dec 31, 2026) |
+| Red-flag case | refused before any model call (rule AI-2) |
+| Use, then a second decision | Use logged; second decision refused (rule AI-3); case state, owner, deadline and priority unchanged |
+
+That is a handful of live calls, not a quality benchmark. The checker is tested offline with a mocked model
+(`api/tests/test_ai_call_prep.py`): invented dates, phone numbers, counts and blood-pressure values are all
+flagged, and an unverified draft cannot be used.
+
 ## Not measured yet
 - Real-world contact success, show rates or closure time. These need a pilot with real (consented) data.
 - Usability with real health workers.
-- The Gemini summary endpoint (not part of the judged flow).
+- AI draft quality at scale (how often drafts are withheld, how often staff press Use), and whether drafts
+  save health workers time. Both need real users.

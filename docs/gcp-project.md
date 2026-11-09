@@ -45,5 +45,5 @@ Artifact Registry, build, Cloud Run (min 0), Hosting and Firestore rules.
 ## Rough monthly cost at min-instances 0
 About **US$0 to 2 per month** at demo traffic (a few thousand requests). Scaling to zero means no idle
 compute charge. Things that could raise it: a min-instances 1 setting for judging (about US$10 to 15 per
-month for the API, judging from InvoiceSentinel), heavy reseeding, or Gemini usage (billed on the Gemini
+month for the API, judging from InvoiceSentinel), heavy reseeding, or Gemini usage (since Nov 9, 2026 billed in this project through Vertex AI, about US$0.001 per draft; before that billed on the Gemini
 API key's project, not this one). Check the live pricing pages before enabling, these are estimates.

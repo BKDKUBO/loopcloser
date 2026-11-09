@@ -24,7 +24,11 @@ Team BKD KUBO · Future Health Digital Innovation Challenge · Challenge 05: Clo
 4. Scroll to the **timeline**: every event shows who did it and which rule allowed it.
 5. Back on Today, press **Advance 3 days** (demo clock) and watch the escalation ladder move overdue cases to
    the next step (reminder, community health worker, supervisor).
-6. Optional: open a case whose next action is "Close with evidence". The close button stays off until you give
+6. On the case page, press **Prepare for the call**. Gemini (Vertex AI) drafts a short guide for the health
+   worker from the masked case record. Every number and date is checked against the record before it is shown;
+   if one does not match, the text is withheld. Press **Use** or **Discard**: both are logged in the timeline and
+   neither changes the case.
+7. Optional: open a case whose next action is "Close with evidence". The close button stays off until you give
    a reason and evidence, and the API refuses a close without them too (rule CLOSE-1).
 
 ## The problem
@@ -66,9 +70,12 @@ LoopCloser is a care-continuity and safety system, **not a diagnostic AI**.
    Automation can only escalate or ask for human review.
 3. **People close.** Only a coordinator or supervisor can close a case, with a reason and evidence or a sign-off.
 4. **Red flags stop automation** until a person resolves them; only a supervisor can resume it.
-5. **AI only drafts.** Gemini is wired to one optional endpoint that drafts a staff case summary from masked
-   fields, labeled "AI draft. Not medical advice." It is not shown in the judged demo and never changes a case.
-   A test enforces that the AI module cannot import the code that changes cases.
+5. **AI only drafts, for staff.** "Prepare for the call" asks Gemini on Vertex AI for a call guide built from
+   masked facts (no names, phone numbers or notes). The draft is labeled "AI draft. Not medical advice.", every
+   number and date in it is verified against the case record (unmatched drafts are withheld and cannot be used),
+   and the request, Use and Discard are events in the audit log. Drafts are refused while a red flag is open or
+   after closure (rule AI-2), only staff can request them, and they never change the case's state, priority,
+   owner or deadline. A test enforces that the AI module cannot import the code that changes cases.
 
 > All pathways are **pending clinical sign-off**: the team has no clinician yet. Deadlines are configurable
 > defaults pending clinical review.
@@ -87,6 +94,7 @@ published rules, so this checks that the code follows them, not clinical accurac
 | API time per request (local, no network) | p50 4.5 ms |
 | Live demo, Today view | p50 about 1 s; cold start about 10 s |
 | Database cost per patient lifecycle | 14 writes and about 35 reads, about US$0.00002 at list price |
+| AI call guide (live, Vertex AI) | 2.7 to 3.6 s per draft; about 420 to 470 input and 160 to 200 output tokens, about US$0.001 per draft |
 
 ## Google Cloud: what each part does
 
@@ -96,13 +104,13 @@ published rules, so this checks that the code follows them, not clinical accurac
 | Firestore `(default)` | Append-only event log per case (source of truth) plus rebuildable case projections |
 | Firebase Hosting | Static Next.js app on the CDN; `/api/**` rewritten to Cloud Run, so one origin |
 | Firebase Auth | Real sign-in with role claims (Google sign-in provider not switched on yet; judges use Demo mode) |
-| Secret Manager | Gemini API key injected into Cloud Run at runtime |
+| Vertex AI (Gemini 3.8 Flash, `global` location) | "Prepare for the call" staff drafts and the summary endpoint, called with the Cloud Run service account (no API key) |
 | Cloud Logging and Error Reporting | Structured JSON logs with request ids; errors with stack traces |
-| Gemini (Google AI Studio API key) | One optional staff-summary draft endpoint; not in the judged flow |
 
-Honest gaps (plan in [docs/approval-plan.md](docs/approval-plan.md)): Gemini is called with an AI Studio key, not
-through Vertex AI; no Model Armor screening; no grounding; no agent framework. We kept AI out of decisions on
-purpose, but the AI that is there could do more useful work for staff.
+Honest gaps (plan in [docs/approval-plan.md](docs/approval-plan.md)): no Model Armor screening yet, no grounding
+and no agent framework, on purpose: rules decide, and the AI only drafts from the case record. Gemini 3.8 Flash
+is served from Vertex AI's `global` location (it is not offered in asia-southeast1), so draft requests may be
+processed outside Singapore; they contain only masked, fictional case facts.
 
 ## Cost and spend limits
 - Expected cost at demo traffic: about US$0 to 2 per month (see [docs/gcp-project.md](docs/gcp-project.md)).
@@ -123,12 +131,12 @@ Firebase Hosting (CDN, cache headers, security headers)
                                                    │  rate limits, structured logs
                                                    ├── domain/commands.py  (guard rules)
                                                    ├── pathways/ (versioned JSON + LOCK.json)
-                                                   ├── ai/assist.py (Gemini, optional staff summary draft)
+                                                   ├── ai/assist.py + ai/verify.py (Vertex Gemini drafts, fact check)
                                                    ▼
                                      Firestore ((default) database)
                                        cases/{id}            projection (rebuildable)
                                        cases/{id}/events/{n} append-only event log (source of truth)
-Secret Manager ──► GEMINI_API_KEY injected into Cloud Run at runtime
+Vertex AI (global) ◄── Gemini 3.8 Flash, called with the Cloud Run service account (ADC, no key)
 Cloud Logging / Error Reporting ◄── JSON logs with request ids and stack traces
 ```
 
@@ -214,14 +222,14 @@ Status: ✅ done in code and tested · 🟡 configured, applied at deploy · ⬜
 - ✅ Firestore security rules enforce roles: workers read only assigned cases, patients only their own case
   and never the event log, no client writes anywhere (`firestore.rules`, 8 emulator tests)
 - ✅ API rate limiting: 120/min per IP, 10/min for imports, AI and demo seeding; `429` with `Retry-After`
-- ✅ Secrets in Secret Manager only: Cloud Run injects `GEMINI_API_KEY` via `secretKeyRef`; production never
-  reads `.env`; `.env` files are git-ignored; gitleaks runs in CI
+- ✅ No AI API key in production: Gemini runs on Vertex AI with the service account (since 2026-11-09). Secret Manager
+  still holds the old key, unused. Production never reads `.env`; `.env` files are git-ignored; gitleaks runs in CI
 - ✅ Demo mode is off by default and only turns on with `DEMO_MODE=true`. It adds a labeled role switcher on top of
   real Firebase Auth (a Bearer token always wins, demo users are forced to `demo-` ids). Production config refuses
   the memory store and wildcard CORS
 - ✅ Participant ids masked for staff (`P-••••42`); logs carry ids only, never names or phones
 - ✅ Gemini boundary test: the AI module cannot import commands, stores or pathways
-- ✅ Least-privilege service account `loopcloser-api` (Firestore user + one secret), created at deploy
+- ✅ Least-privilege service account `loopcloser-api` (Firestore user + Vertex AI user), created at deploy
 - ⬜ Real accounts and role assignment (`api/scripts/set_role.py`)
 
 ### 2. Shipping
