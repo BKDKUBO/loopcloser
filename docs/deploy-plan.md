@@ -42,7 +42,7 @@ APIs, Firestore `(default)` with backups, the Gemini key in Secret Manager and a
 
 | Item | Expected cost |
 | --- | --- |
-| Cloud Run at min 0, max 1 | US$0 to 2/month at demo traffic. The free monthly Cloud Run allowance is shared across the billing account, and InvoiceSentinel at min 1 instance probably uses most of it, so we may pay a little for each request. |
+| Cloud Run at min 0, max 1 | US$0 to 2/month at demo traffic. The free monthly Cloud Run allowance is shared across the billing account (InvoiceSentinel is back at min 0 since Nov 9, 2026). Cold start measured at about 10 s. |
 | Cold starts | First request after idle takes a few seconds. Keeping one warm instance (min 1) for judging week would cost roughly US$10 to 15/month extra. Not recommended unless judges see slow loads. |
 | Firestore `(default)` | US$0. Free tier is 1 GiB and 50k reads / 20k writes per day. Seeding 1,000 patients is roughly 10k to 15k writes, so seed at most once a day. Advancing the clock adds a few hundred writes each time. |
 | PITR and daily backups | Cents per month at this data size. |
@@ -60,5 +60,5 @@ Expected total: **about US$0 to 2 per month**. The US$5 budget alert emails at 5
   seeding data and advancing the demo clock. All records are fictional. Set it to false for a real pilot.
 - Who gets real accounts and which roles.
 - `CLINIC_PHONE` is a placeholder `(02) 0000-0000 (demo number)`.
-- The demo clock lives in memory on the single instance. It resets to today when the instance restarts.
-  That is fine for a demo; a pilot would store it in Firestore or drop it.
+- The demo clock was first planned in memory. It is now stored in Firestore (`meta/clock`), so it survives
+  restarts; `api/scripts/reset_demo.py` resets it. A pilot would drop the demo clock.

@@ -1,0 +1,1129 @@
+{
+ "about": "LoopCloser labeled SYNTHETIC evaluation set. Every case is fictional. Labels were written by hand from the documented rules (README priority table, pathway JSON triggers, docs/guard-rules.md), before running the code. This measures whether the running system follows its own published rules. It is NOT clinical validation: no clinician has reviewed these labels or the pathways.",
+ "version": "1.0.0",
+ "defaults": {
+  "owner": "demo-worker-01",
+  "screened_days_ago": 0,
+  "severity": "abnormal",
+  "language": "en"
+ },
+ "scenarios": [
+  {
+   "id": "R01",
+   "category": "routing",
+   "note": "Positive FIT goes to colonoscopy, not a repeat FIT",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive",
+    "severity": "abnormal"
+   },
+   "label": {
+    "pathway_id": "fit-positive",
+    "clinical_urgency": "standard",
+    "red_flag_open": false,
+    "due_in_days": 30
+   }
+  },
+  {
+   "id": "R02",
+   "category": "routing",
+   "note": "Elevated BP: repeat on another day within 7 days",
+   "open": {
+    "screening_type": "bp",
+    "result": "elevated",
+    "severity": "abnormal"
+   },
+   "label": {
+    "pathway_id": "bp-elevated",
+    "clinical_urgency": "standard",
+    "red_flag_open": false,
+    "due_in_days": 7
+   }
+  },
+  {
+   "id": "R03",
+   "category": "routing",
+   "note": "Elevated BP marked borderline still uses the BP pathway (more specific trigger)",
+   "open": {
+    "screening_type": "bp",
+    "result": "elevated",
+    "severity": "borderline"
+   },
+   "label": {
+    "pathway_id": "bp-elevated",
+    "clinical_urgency": "standard",
+    "red_flag_open": false,
+    "due_in_days": 7
+   }
+  },
+  {
+   "id": "R04",
+   "category": "routing",
+   "note": "Critical BP reading is urgent",
+   "open": {
+    "screening_type": "bp",
+    "result": "elevated",
+    "severity": "critical"
+   },
+   "label": {
+    "pathway_id": "bp-elevated",
+    "clinical_urgency": "urgent",
+    "red_flag_open": false,
+    "due_in_days": 7
+   }
+  },
+  {
+   "id": "R05",
+   "category": "routing",
+   "note": "Abnormal cervical screen",
+   "open": {
+    "screening_type": "cervical",
+    "result": "abnormal",
+    "severity": "abnormal"
+   },
+   "label": {
+    "pathway_id": "cervical-abnormal",
+    "clinical_urgency": "standard",
+    "red_flag_open": false,
+    "due_in_days": 30
+   }
+  },
+  {
+   "id": "R06",
+   "category": "routing",
+   "note": "Positive HPV/cervical screen",
+   "open": {
+    "screening_type": "cervical",
+    "result": "positive",
+    "severity": "abnormal"
+   },
+   "label": {
+    "pathway_id": "cervical-abnormal",
+    "clinical_urgency": "standard",
+    "red_flag_open": false,
+    "due_in_days": 30
+   }
+  },
+  {
+   "id": "R07",
+   "category": "routing",
+   "note": "Abnormal glucose has no specific pathway: generic abnormal, 14 days",
+   "open": {
+    "screening_type": "glucose",
+    "result": "high",
+    "severity": "abnormal"
+   },
+   "label": {
+    "pathway_id": "abnormal-generic",
+    "clinical_urgency": "standard",
+    "red_flag_open": false,
+    "due_in_days": 14
+   }
+  },
+  {
+   "id": "R08",
+   "category": "routing",
+   "note": "Critical glucose is urgent on the generic pathway",
+   "open": {
+    "screening_type": "glucose",
+    "result": "high",
+    "severity": "critical"
+   },
+   "label": {
+    "pathway_id": "abnormal-generic",
+    "clinical_urgency": "urgent",
+    "red_flag_open": false,
+    "due_in_days": 14
+   }
+  },
+  {
+   "id": "R09",
+   "category": "routing",
+   "note": "Borderline cholesterol: repeat screening in 90 days",
+   "open": {
+    "screening_type": "lipids",
+    "result": "high",
+    "severity": "borderline"
+   },
+   "label": {
+    "pathway_id": "borderline",
+    "clinical_urgency": "standard",
+    "red_flag_open": false,
+    "due_in_days": 90
+   }
+  },
+  {
+   "id": "R10",
+   "category": "routing",
+   "note": "New symptoms reported: red-flag route, automation paused, urgent",
+   "open": {
+    "screening_type": "symptom",
+    "result": "chest_pain",
+    "severity": "abnormal"
+   },
+   "label": {
+    "pathway_id": "new-symptoms",
+    "clinical_urgency": "urgent",
+    "red_flag_open": true,
+    "due_in_days": 1
+   }
+  },
+  {
+   "id": "R11",
+   "category": "routing",
+   "note": "Red flag ticked at upload on a FIT result pauses automation and makes it urgent",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive",
+    "severity": "abnormal",
+    "red_flag": true
+   },
+   "label": {
+    "pathway_id": "fit-positive",
+    "clinical_urgency": "urgent",
+    "red_flag_open": true,
+    "due_in_days": 30
+   }
+  },
+  {
+   "id": "R12",
+   "category": "routing",
+   "note": "Normal result: no pathway, no case (sent to human review instead)",
+   "open": {
+    "screening_type": "fit",
+    "result": "negative",
+    "severity": "normal"
+   },
+   "label": {
+    "no_pathway": true
+   }
+  },
+  {
+   "id": "R13",
+   "category": "routing",
+   "note": "Unknown test with normal severity: no pathway",
+   "open": {
+    "screening_type": "vision",
+    "result": "ok",
+    "severity": "normal"
+   },
+   "label": {
+    "no_pathway": true
+   }
+  },
+  {
+   "id": "P01",
+   "category": "priority",
+   "note": "New FIT case, nothing booked, not contacted: no appt 3 + no contact 2 = 5",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "label": {
+    "tier": "high",
+    "score": 5
+   }
+  },
+  {
+   "id": "P02",
+   "category": "priority",
+   "note": "FIT screened 40 days ago, deadline 10 days past: overdue 4 + 3 + 2 = 9",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive",
+    "screened_days_ago": 40
+   },
+   "label": {
+    "tier": "urgent",
+    "score": 9
+   }
+  },
+  {
+   "id": "P03",
+   "category": "priority",
+   "note": "BP screened 5 days ago, due in 2 days: due soon 3 + 3 + 2 = 8",
+   "open": {
+    "screening_type": "bp",
+    "result": "elevated",
+    "screened_days_ago": 5
+   },
+   "label": {
+    "tier": "urgent",
+    "score": 8
+   }
+  },
+  {
+   "id": "P04",
+   "category": "priority",
+   "note": "Critical glucose: critical 5 + 3 + 2 = 10",
+   "open": {
+    "screening_type": "glucose",
+    "result": "high",
+    "severity": "critical"
+   },
+   "label": {
+    "tier": "urgent",
+    "score": 10
+   }
+  },
+  {
+   "id": "P05",
+   "category": "priority",
+   "note": "Borderline, appointment booked after staff-confirmed understanding: 0",
+   "open": {
+    "screening_type": "lipids",
+    "result": "high",
+    "severity": "borderline"
+   },
+   "advance": "action_scheduled",
+   "label": {
+    "tier": "routine",
+    "score": 0
+   }
+  },
+  {
+   "id": "P06",
+   "category": "priority",
+   "note": "Borderline, Cebuano speaker, comorbidity, transport barrier: 3 + 2 + 2 + 1 + 1 = 9",
+   "open": {
+    "screening_type": "lipids",
+    "result": "high",
+    "severity": "borderline",
+    "language": "ceb",
+    "comorbidity": true,
+    "barriers": [
+     "transport"
+    ]
+   },
+   "label": {
+    "tier": "urgent",
+    "score": 9
+   }
+  },
+  {
+   "id": "P07",
+   "category": "priority",
+   "note": "Borderline, booked, transport barrier: barrier 2 = 2",
+   "open": {
+    "screening_type": "lipids",
+    "result": "high",
+    "severity": "borderline",
+    "barriers": [
+     "transport"
+    ]
+   },
+   "advance": "action_scheduled",
+   "label": {
+    "tier": "routine",
+    "score": 2
+   }
+  },
+  {
+   "id": "P08",
+   "category": "priority",
+   "note": "Borderline, booked, transport barrier, comorbidity: 2 + 1 = 3",
+   "open": {
+    "screening_type": "lipids",
+    "result": "high",
+    "severity": "borderline",
+    "barriers": [
+     "transport"
+    ],
+    "comorbidity": true
+   },
+   "advance": "action_scheduled",
+   "label": {
+    "tier": "moderate",
+    "score": 3
+   }
+  },
+  {
+   "id": "P09",
+   "category": "priority",
+   "note": "New symptoms: red flag 5 + due soon 3 + no appt 3 + no contact 2 = 13",
+   "open": {
+    "screening_type": "symptom",
+    "result": "dizziness"
+   },
+   "label": {
+    "tier": "urgent",
+    "score": 13
+   }
+  },
+  {
+   "id": "P10",
+   "category": "priority",
+   "note": "Borderline, Filipino speaker (supported), not booked: 3 + 2 = 5",
+   "open": {
+    "screening_type": "lipids",
+    "result": "high",
+    "severity": "borderline",
+    "language": "fil"
+   },
+   "label": {
+    "tier": "high",
+    "score": 5
+   }
+  },
+  {
+   "id": "P11",
+   "category": "priority",
+   "note": "Borderline, cost barrier only (logistics), booked: 2",
+   "open": {
+    "screening_type": "lipids",
+    "result": "high",
+    "severity": "borderline",
+    "barriers": [
+     "cost"
+    ]
+   },
+   "advance": "action_scheduled",
+   "label": {
+    "tier": "routine",
+    "score": 2
+   }
+  },
+  {
+   "id": "P12",
+   "category": "priority",
+   "note": "Borderline, fear barrier is not a logistics barrier, booked: 0",
+   "open": {
+    "screening_type": "lipids",
+    "result": "high",
+    "severity": "borderline",
+    "barriers": [
+     "fear"
+    ]
+   },
+   "advance": "action_scheduled",
+   "label": {
+    "tier": "routine",
+    "score": 0
+   }
+  },
+  {
+   "id": "G01",
+   "category": "guard",
+   "note": "Happy path: worker moves a case through review, notice, understanding check, booking and visit",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "visit_completed",
+   "label": {
+    "decision": "allow",
+    "state": "visit_completed"
+   }
+  },
+  {
+   "id": "G02",
+   "category": "guard",
+   "note": "Coordinator closes after the visit with evidence",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "visit_completed",
+   "step": {
+    "as": "coordinator",
+    "path": "/close",
+    "body": {
+     "closure_reason": "visit_completed",
+     "evidence_ref": "visit-note-123"
+    }
+   },
+   "label": {
+    "decision": "allow",
+    "state": "closed"
+   }
+  },
+  {
+   "id": "G03",
+   "category": "guard",
+   "note": "Worker cannot close a case",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "visit_completed",
+   "step": {
+    "as": "worker",
+    "path": "/close",
+    "body": {
+     "closure_reason": "visit_completed",
+     "evidence_ref": "x"
+    }
+   },
+   "label": {
+    "decision": "block"
+   }
+  },
+  {
+   "id": "G04",
+   "category": "guard",
+   "note": "Closing without evidence or sign-off is refused (CLOSE-1)",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "visit_completed",
+   "step": {
+    "as": "coordinator",
+    "path": "/close",
+    "body": {
+     "closure_reason": "visit_completed"
+    }
+   },
+   "label": {
+    "decision": "block",
+    "rule_id": "CLOSE-1"
+   }
+  },
+  {
+   "id": "G05",
+   "category": "guard",
+   "note": "Closing a brand-new result before any follow-up is refused (SM-1)",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "step": {
+    "as": "coordinator",
+    "path": "/close",
+    "body": {
+     "closure_reason": "other",
+     "evidence_ref": "x"
+    }
+   },
+   "label": {
+    "decision": "block",
+    "rule_id": "SM-1"
+   }
+  },
+  {
+   "id": "G06",
+   "category": "guard",
+   "note": "Closing through a plain transition is refused (CLOSE-1)",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "visit_completed",
+   "step": {
+    "as": "coordinator",
+    "path": "/transition",
+    "body": {
+     "target": "closed"
+    }
+   },
+   "label": {
+    "decision": "block",
+    "rule_id": "CLOSE-1"
+   }
+  },
+  {
+   "id": "G07",
+   "category": "guard",
+   "note": "A message cannot confirm understanding (MSG-1)",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "patient_notified",
+   "step": {
+    "as": "worker",
+    "path": "/transition",
+    "body": {
+     "target": "understanding_confirmed",
+     "source": "message"
+    }
+   },
+   "label": {
+    "decision": "block",
+    "rule_id": "MSG-1"
+   }
+  },
+  {
+   "id": "G08",
+   "category": "guard",
+   "note": "A delivered approved message moves Reviewed to Patient notified, no further (MSG-2)",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "reviewed",
+   "step": {
+    "as": "worker",
+    "path": "/notifications",
+    "body": {
+     "status": "delivered",
+     "template_id": "result-notice",
+     "template_version": "1.0.0",
+     "language": "fil"
+    }
+   },
+   "label": {
+    "decision": "allow",
+    "state": "patient_notified"
+   }
+  },
+  {
+   "id": "G09",
+   "category": "guard",
+   "note": "Unapproved template is refused (MSG-3)",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "reviewed",
+   "step": {
+    "as": "worker",
+    "path": "/notifications",
+    "body": {
+     "status": "sent",
+     "template_id": "free-text",
+     "template_version": "1.0.0",
+     "language": "en"
+    }
+   },
+   "label": {
+    "decision": "block",
+    "rule_id": "MSG-3"
+   }
+  },
+  {
+   "id": "G10",
+   "category": "guard",
+   "note": "Urgent case with no owner can be reviewed",
+   "open": {
+    "screening_type": "glucose",
+    "result": "high",
+    "severity": "critical",
+    "owner": null
+   },
+   "step": {
+    "as": "coordinator",
+    "path": "/transition",
+    "body": {
+     "target": "reviewed"
+    }
+   },
+   "label": {
+    "decision": "allow",
+    "state": "reviewed"
+   }
+  },
+  {
+   "id": "G11",
+   "category": "guard",
+   "note": "Urgent case with no owner cannot move past Reviewed (OWN-1)",
+   "open": {
+    "screening_type": "glucose",
+    "result": "high",
+    "severity": "critical",
+    "owner": null
+   },
+   "pre": [
+    {
+     "as": "coordinator",
+     "path": "/transition",
+     "body": {
+      "target": "reviewed"
+     }
+    }
+   ],
+   "step": {
+    "as": "coordinator",
+    "path": "/transition",
+    "body": {
+     "target": "patient_notified"
+    }
+   },
+   "label": {
+    "decision": "block",
+    "rule_id": "OWN-1"
+   }
+  },
+  {
+   "id": "G12",
+   "category": "guard",
+   "note": "Supervisor cannot lower priority while a red flag is open (PRI-2)",
+   "open": {
+    "screening_type": "symptom",
+    "result": "dizziness"
+   },
+   "step": {
+    "as": "supervisor",
+    "path": "/priority-override",
+    "body": {
+     "tier": "routine",
+     "reason": "other",
+     "note": "test"
+    }
+   },
+   "label": {
+    "decision": "block",
+    "rule_id": "PRI-2"
+   }
+  },
+  {
+   "id": "G13",
+   "category": "guard",
+   "note": "Supervisor can override priority with a reason and note when no red flag is open (PRI-1)",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "step": {
+    "as": "supervisor",
+    "path": "/priority-override",
+    "body": {
+     "tier": "moderate",
+     "reason": "completed_elsewhere",
+     "note": "colonoscopy booked at another clinic"
+    }
+   },
+   "label": {
+    "decision": "allow",
+    "tier": "moderate"
+   }
+  },
+  {
+   "id": "G14",
+   "category": "guard",
+   "note": "Coordinator cannot override priority (supervisor only)",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "step": {
+    "as": "coordinator",
+    "path": "/priority-override",
+    "body": {
+     "tier": "routine",
+     "reason": "other",
+     "note": "x"
+    }
+   },
+   "label": {
+    "decision": "block"
+   }
+  },
+  {
+   "id": "G15",
+   "category": "guard",
+   "note": "Coordinator cannot resume automation (RF-2, supervisor only)",
+   "open": {
+    "screening_type": "symptom",
+    "result": "dizziness"
+   },
+   "pre": [
+    {
+     "as": "coordinator",
+     "path": "/transition",
+     "body": {
+      "target": "resolved_by_human",
+      "note": "called, no emergency"
+     }
+    }
+   ],
+   "step": {
+    "as": "coordinator",
+    "path": "/resume-automation",
+    "body": {
+     "reason": "resolved"
+    }
+   },
+   "label": {
+    "decision": "block"
+   }
+  },
+  {
+   "id": "G16",
+   "category": "guard",
+   "note": "Supervisor cannot resume automation while the red flag is still open (RF-2)",
+   "open": {
+    "screening_type": "symptom",
+    "result": "dizziness"
+   },
+   "step": {
+    "as": "supervisor",
+    "path": "/resume-automation",
+    "body": {
+     "reason": "looks fine"
+    }
+   },
+   "label": {
+    "decision": "block",
+    "rule_id": "RF-2"
+   }
+  },
+  {
+   "id": "G17",
+   "category": "guard",
+   "note": "After a human resolves the red flag, a supervisor can resume automation",
+   "open": {
+    "screening_type": "symptom",
+    "result": "dizziness"
+   },
+   "pre": [
+    {
+     "as": "coordinator",
+     "path": "/transition",
+     "body": {
+      "target": "resolved_by_human",
+      "note": "called, no emergency"
+     }
+    }
+   ],
+   "step": {
+    "as": "supervisor",
+    "path": "/resume-automation",
+    "body": {
+     "reason": "clinician reviewed by phone"
+    }
+   },
+   "label": {
+    "decision": "allow",
+    "automation_paused": false
+   }
+  },
+  {
+   "id": "G18",
+   "category": "guard",
+   "note": "Worker cannot resolve a red flag",
+   "open": {
+    "screening_type": "symptom",
+    "result": "dizziness"
+   },
+   "step": {
+    "as": "worker",
+    "path": "/transition",
+    "body": {
+     "target": "resolved_by_human"
+    }
+   },
+   "label": {
+    "decision": "block"
+   }
+  },
+  {
+   "id": "G19",
+   "category": "guard",
+   "note": "Program manager is read-only",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "step": {
+    "as": "program_manager",
+    "path": "/transition",
+    "body": {
+     "target": "reviewed"
+    }
+   },
+   "label": {
+    "decision": "block"
+   }
+  },
+  {
+   "id": "G20",
+   "category": "guard",
+   "note": "A worker cannot see a case assigned to someone else",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive",
+    "owner": "demo-worker-02"
+   },
+   "step": {
+    "as": "worker",
+    "method": "GET",
+    "path": ""
+   },
+   "label": {
+    "decision": "block"
+   }
+  },
+  {
+   "id": "G21",
+   "category": "guard",
+   "note": "Patient role cannot read the staff event log",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "step": {
+    "as": "patient",
+    "method": "GET",
+    "path": "/events"
+   },
+   "label": {
+    "decision": "block"
+   }
+  },
+  {
+   "id": "G22",
+   "category": "guard",
+   "note": "Unable to reach needs a reason and an escalation date (SM-2)",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "reviewed",
+   "step": {
+    "as": "worker",
+    "path": "/transition",
+    "body": {
+     "target": "unable_to_reach"
+    }
+   },
+   "label": {
+    "decision": "block",
+    "rule_id": "SM-2"
+   }
+  },
+  {
+   "id": "G23",
+   "category": "guard",
+   "note": "Unable to reach with reason and escalation date is accepted",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "reviewed",
+   "step": {
+    "as": "worker",
+    "path": "/transition",
+    "body": {
+     "target": "unable_to_reach",
+     "reason": "phone off",
+     "escalation_date": "{today+3}"
+    }
+   },
+   "label": {
+    "decision": "allow",
+    "state": "unable_to_reach"
+   }
+  },
+  {
+   "id": "G24",
+   "category": "guard",
+   "note": "While a red flag has paused automation, a human worker can still log a call (only automation is blocked)",
+   "open": {
+    "screening_type": "symptom",
+    "result": "dizziness"
+   },
+   "step": {
+    "as": "worker",
+    "path": "/contact-attempts",
+    "body": {
+     "channel": "call",
+     "result": "reached"
+    }
+   },
+   "label": {
+    "decision": "allow"
+   }
+  },
+  {
+   "id": "G25",
+   "category": "guard",
+   "note": "Skipping steps is refused: New result straight to Action scheduled (SM-1)",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "step": {
+    "as": "worker",
+    "path": "/transition",
+    "body": {
+     "target": "action_scheduled"
+    }
+   },
+   "label": {
+    "decision": "block",
+    "rule_id": "SM-1"
+   }
+  },
+  {
+   "id": "G26",
+   "category": "guard",
+   "note": "Coordinator closes a declined case with sign-off",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "patient_notified",
+   "pre": [
+    {
+     "as": "worker",
+     "path": "/transition",
+     "body": {
+      "target": "declined",
+      "reason": "prefers private clinic"
+     }
+    }
+   ],
+   "step": {
+    "as": "coordinator",
+    "path": "/close",
+    "body": {
+     "closure_reason": "declined",
+     "sign_off": true
+    }
+   },
+   "label": {
+    "decision": "allow",
+    "state": "closed"
+   }
+  },
+  {
+   "id": "E01",
+   "category": "escalation",
+   "note": "Three failed contact attempts escalate the case (ESC-1)",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "reviewed",
+   "pre": [
+    {
+     "as": "worker",
+     "path": "/contact-attempts",
+     "body": {
+      "channel": "call",
+      "result": "no_answer"
+     }
+    },
+    {
+     "as": "worker",
+     "path": "/contact-attempts",
+     "body": {
+      "channel": "sms",
+      "result": "no_answer"
+     }
+    }
+   ],
+   "step": {
+    "as": "worker",
+    "path": "/contact-attempts",
+    "body": {
+     "channel": "call",
+     "result": "busy"
+    }
+   },
+   "label": {
+    "escalated": true
+   }
+  },
+  {
+   "id": "E02",
+   "category": "escalation",
+   "note": "Two failed attempts do not escalate yet",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "reviewed",
+   "pre": [
+    {
+     "as": "worker",
+     "path": "/contact-attempts",
+     "body": {
+      "channel": "call",
+      "result": "no_answer"
+     }
+    }
+   ],
+   "step": {
+    "as": "worker",
+    "path": "/contact-attempts",
+    "body": {
+     "channel": "sms",
+     "result": "no_answer"
+    }
+   },
+   "label": {
+    "escalated": false
+   }
+  },
+  {
+   "id": "E03",
+   "category": "escalation",
+   "note": "Two failures then a reached call does not escalate",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "reviewed",
+   "pre": [
+    {
+     "as": "worker",
+     "path": "/contact-attempts",
+     "body": {
+      "channel": "call",
+      "result": "no_answer"
+     }
+    },
+    {
+     "as": "worker",
+     "path": "/contact-attempts",
+     "body": {
+      "channel": "call",
+      "result": "no_answer"
+     }
+    }
+   ],
+   "step": {
+    "as": "worker",
+    "path": "/contact-attempts",
+    "body": {
+     "channel": "call",
+     "result": "reached"
+    }
+   },
+   "label": {
+    "escalated": false
+   }
+  },
+  {
+   "id": "E04",
+   "category": "escalation",
+   "note": "Invalid number counts as a failed attempt; third failure escalates",
+   "open": {
+    "screening_type": "bp",
+    "result": "elevated"
+   },
+   "advance": "reviewed",
+   "pre": [
+    {
+     "as": "worker",
+     "path": "/contact-attempts",
+     "body": {
+      "channel": "call",
+      "result": "invalid_number"
+     }
+    },
+    {
+     "as": "worker",
+     "path": "/contact-attempts",
+     "body": {
+      "channel": "sms",
+      "result": "invalid_number"
+     }
+    }
+   ],
+   "step": {
+    "as": "worker",
+    "path": "/contact-attempts",
+    "body": {
+     "channel": "call",
+     "result": "invalid_number"
+    }
+   },
+   "label": {
+    "escalated": true
+   }
+  }
+ ]
+}

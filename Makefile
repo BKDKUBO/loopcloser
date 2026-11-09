@@ -1,4 +1,4 @@
-.PHONY: install api web seed test test-emulator lint synth
+.PHONY: install api web seed test test-emulator lint synth eval
 
 install:
 	cd api && python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
@@ -28,3 +28,6 @@ test-emulator:
 
 synth:
 	cd api && .venv/bin/python -m loopcloser.synth.generator --n 1000 --seed 42 --out ../data/synthetic
+
+eval:
+	cd api && .venv/bin/python ../eval/run_eval.py

@@ -1,10 +1,11 @@
 # LoopCloser Google Cloud project
 
 LoopCloser uses its **own** project, separate from InvoiceSentinel. The id is set once in
-`deploy/project.env` (placeholder `loopcloser-bkdkubo`). Project ids are global, so if that id is taken
+`deploy/project.env` (`loopcloser-bkdkubo`). Project ids are global, so if that id is taken
 when we create it, pick another (e.g. `loopcloser-bkdkubo-2026`) and change only that file and `.firebaserc`.
 
-Status (Oct 17, 2026, 1:31 PM Manila time): **project created, app not deployed.**
+Status (updated Nov 9, 2026, Manila time): **project created Oct 17; app deployed Oct 18** (see
+[deploy-plan.md](deploy-plan.md)). The setup record below is from Oct 17.
 - Project `loopcloser-bkdkubo` (number 386587565763) under mmocanaiii-org, billing linked to "My Billing Account"
 - Firebase added (default Hosting site `loopcloser-bkdkubo`)
 - APIs enabled: Cloud Run, Artifact Registry, Cloud Build, Firestore, Secret Manager, Billing Budgets,
@@ -12,8 +13,8 @@ Status (Oct 17, 2026, 1:31 PM Manila time): **project created, app not deployed.
 - Firestore `(default)` in asia-southeast1 with point-in-time recovery (7 days) and daily backups kept 14 days
 - Secret `loopcloser-gemini-api-key` (version 1)
 - Budget "LoopCloser": US$5/month, alerts at 50%, 90%, 100%
-- Not done yet: service account, Artifact Registry repo, Cloud Run, Hosting deploy, Firebase web app
-  registration and sign-in providers (all part of the deploy step)
+- Done at deploy (Oct 18): service accounts, Artifact Registry repo, Cloud Run, Hosting deploy, Firebase web app.
+  Still not done: the Google sign-in provider (judges use Demo mode)
 
 ## What creating it takes
 `deploy/create-project.sh` (dry run unless `CONFIRM=yes`):
@@ -34,9 +35,9 @@ Artifact Registry, build, Cloud Run (min 0), Hosting and Firestore rules.
   named database. Seeding 1,000 synthetic patients is a few thousand writes, so reseeding many times a day
   could pass 20k writes.
 - **Cloud Run** (request-based billing): 180,000 vCPU-seconds, 360,000 GiB-seconds and 2 million requests
-  free per month, **pooled per billing account**. InvoiceSentinel runs on the same billing account with
-  min-instances 1 until judging ends, so it likely uses up that pool and LoopCloser pays from the first
-  request until InvoiceSentinel goes back to min 0.
+  free per month, **pooled per billing account**. InvoiceSentinel shares the billing account. It ran at
+  min-instances 1 during its own judging and went back to min 0 on Nov 9, 2026, so the shared free pool
+  should again cover LoopCloser's demo traffic.
 - **Cloud Build, Artifact Registry, Secret Manager, Cloud Logging, Firebase Hosting, Firebase Auth**
   (email/Google sign-in) all have free allowances far above what a demo uses.
 - PITR and scheduled backups are billed on storage; for a few MB of synthetic data that is cents.

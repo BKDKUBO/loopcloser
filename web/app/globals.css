@@ -31,3 +31,6 @@ details summary { cursor: pointer; color: var(--accent); }
 .ok { color: #065f46; font-weight: 600; }
 input, textarea { font-size: 16px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; }
 .ladder li.done { color: #065f46; } .ladder li.not-needed { color: var(--muted, #6b7280); text-decoration: line-through; } .ladder li.due { color: var(--bad); font-weight: 600; }
+
+.safety { border-left: 4px solid var(--warn); }
+.safety ol { margin: 4px 0 0 18px; padding: 0; }

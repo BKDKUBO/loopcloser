@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { CaseActions } from "@/components/CaseActions";
 import { PriorityBadge, WhyPriority } from "@/components/Priority";
 import { RequireRole } from "@/components/RequireRole";
+import { SafetyLine } from "@/components/SafetyLine";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { humanState } from "@/lib/lanes";
@@ -163,6 +164,7 @@ function CaseDetail() {
             <WhyPriority p={c.priority} open />
             {s.role === "supervisor" && c.state !== "closed" && <OverrideForm c={c} onChange={changed} />}
           </section>
+          <SafetyLine pathway={`${c.pathway_id} v${c.pathway_version}`} />
           <Barriers c={c} onChange={changed} />
           <section aria-labelledby="lad"><h2 id="lad">Escalation ladder (day {c.day ?? 0})</h2>
             <ol className="ladder">{(c.ladder ?? []).map((st) => (

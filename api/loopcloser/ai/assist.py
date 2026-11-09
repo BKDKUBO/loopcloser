@@ -1,4 +1,6 @@
-"""Gemini helpers. Gemini only EXPLAINS, TRANSLATES (unofficial help chat) and SUMMARIZES.
+"""Gemini helpers. Today Gemini only drafts a staff case SUMMARY (POST /api/ai/cases/{id}/summary).
+
+Explanations and a translated help chat were planned but are not built.
 
 It never decides urgency, priority, pathway, closure, or anything clinical.
 This module returns text drafts only. It has no access to the repository or to

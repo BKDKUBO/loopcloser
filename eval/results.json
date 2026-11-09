@@ -1,0 +1,1048 @@
+{
+  "summary": {
+    "routing": {
+      "n": 13,
+      "pass": 13,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "errors": []
+    },
+    "priority": {
+      "n": 12,
+      "pass": 12,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "errors": []
+    },
+    "guard": {
+      "n": 26,
+      "pass": 26,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "errors": []
+    },
+    "escalation": {
+      "n": 4,
+      "pass": 4,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "errors": []
+    },
+    "latency_ms": {
+      "requests": 165,
+      "p50": 4.51,
+      "p95": 5.75,
+      "max": 19.01
+    },
+    "failures": [],
+    "lifecycle_firestore_ops": {
+      "writes": 14,
+      "reads_approx": 35
+    },
+    "live": {
+      "first_ready_ms": 664.3,
+      "health": {
+        "n": 5,
+        "p50": 320.5,
+        "p95": 336.1
+      },
+      "today_supervisor": {
+        "n": 5,
+        "p50": 960.6,
+        "p95": 4025.5
+      },
+      "case_detail": {
+        "n": 5,
+        "p50": 351.8,
+        "p95": 614.9
+      }
+    }
+  },
+  "results": [
+    {
+      "id": "R01",
+      "category": "routing",
+      "note": "Positive FIT goes to colonoscopy, not a repeat FIT",
+      "label": {
+        "pathway_id": "fit-positive",
+        "clinical_urgency": "standard",
+        "red_flag_open": false,
+        "due_in_days": 30
+      },
+      "got": {
+        "pathway_id": "fit-positive",
+        "clinical_urgency": "standard",
+        "red_flag_open": false,
+        "due_in_days": 30
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "R02",
+      "category": "routing",
+      "note": "Elevated BP: repeat on another day within 7 days",
+      "label": {
+        "pathway_id": "bp-elevated",
+        "clinical_urgency": "standard",
+        "red_flag_open": false,
+        "due_in_days": 7
+      },
+      "got": {
+        "pathway_id": "bp-elevated",
+        "clinical_urgency": "standard",
+        "red_flag_open": false,
+        "due_in_days": 7
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "R03",
+      "category": "routing",
+      "note": "Elevated BP marked borderline still uses the BP pathway (more specific trigger)",
+      "label": {
+        "pathway_id": "bp-elevated",
+        "clinical_urgency": "standard",
+        "red_flag_open": false,
+        "due_in_days": 7
+      },
+      "got": {
+        "pathway_id": "bp-elevated",
+        "clinical_urgency": "standard",
+        "red_flag_open": false,
+        "due_in_days": 7
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "R04",
+      "category": "routing",
+      "note": "Critical BP reading is urgent",
+      "label": {
+        "pathway_id": "bp-elevated",
+        "clinical_urgency": "urgent",
+        "red_flag_open": false,
+        "due_in_days": 7
+      },
+      "got": {
+        "pathway_id": "bp-elevated",
+        "clinical_urgency": "urgent",
+        "red_flag_open": false,
+        "due_in_days": 7
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "R05",
+      "category": "routing",
+      "note": "Abnormal cervical screen",
+      "label": {
+        "pathway_id": "cervical-abnormal",
+        "clinical_urgency": "standard",
+        "red_flag_open": false,
+        "due_in_days": 30
+      },
+      "got": {
+        "pathway_id": "cervical-abnormal",
+        "clinical_urgency": "standard",
+        "red_flag_open": false,
+        "due_in_days": 30
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "R06",
+      "category": "routing",
+      "note": "Positive HPV/cervical screen",
+      "label": {
+        "pathway_id": "cervical-abnormal",
+        "clinical_urgency": "standard",
+        "red_flag_open": false,
+        "due_in_days": 30
+      },
+      "got": {
+        "pathway_id": "cervical-abnormal",
+        "clinical_urgency": "standard",
+        "red_flag_open": false,
+        "due_in_days": 30
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "R07",
+      "category": "routing",
+      "note": "Abnormal glucose has no specific pathway: generic abnormal, 14 days",
+      "label": {
+        "pathway_id": "abnormal-generic",
+        "clinical_urgency": "standard",
+        "red_flag_open": false,
+        "due_in_days": 14
+      },
+      "got": {
+        "pathway_id": "abnormal-generic",
+        "clinical_urgency": "standard",
+        "red_flag_open": false,
+        "due_in_days": 14
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "R08",
+      "category": "routing",
+      "note": "Critical glucose is urgent on the generic pathway",
+      "label": {
+        "pathway_id": "abnormal-generic",
+        "clinical_urgency": "urgent",
+        "red_flag_open": false,
+        "due_in_days": 14
+      },
+      "got": {
+        "pathway_id": "abnormal-generic",
+        "clinical_urgency": "urgent",
+        "red_flag_open": false,
+        "due_in_days": 14
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "R09",
+      "category": "routing",
+      "note": "Borderline cholesterol: repeat screening in 90 days",
+      "label": {
+        "pathway_id": "borderline",
+        "clinical_urgency": "standard",
+        "red_flag_open": false,
+        "due_in_days": 90
+      },
+      "got": {
+        "pathway_id": "borderline",
+        "clinical_urgency": "standard",
+        "red_flag_open": false,
+        "due_in_days": 90
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "R10",
+      "category": "routing",
+      "note": "New symptoms reported: red-flag route, automation paused, urgent",
+      "label": {
+        "pathway_id": "new-symptoms",
+        "clinical_urgency": "urgent",
+        "red_flag_open": true,
+        "due_in_days": 1
+      },
+      "got": {
+        "pathway_id": "new-symptoms",
+        "clinical_urgency": "urgent",
+        "red_flag_open": true,
+        "due_in_days": 1
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "R11",
+      "category": "routing",
+      "note": "Red flag ticked at upload on a FIT result pauses automation and makes it urgent",
+      "label": {
+        "pathway_id": "fit-positive",
+        "clinical_urgency": "urgent",
+        "red_flag_open": true,
+        "due_in_days": 30
+      },
+      "got": {
+        "pathway_id": "fit-positive",
+        "clinical_urgency": "urgent",
+        "red_flag_open": true,
+        "due_in_days": 30
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "R12",
+      "category": "routing",
+      "note": "Normal result: no pathway, no case (sent to human review instead)",
+      "label": {
+        "no_pathway": true
+      },
+      "got": {
+        "no_pathway": true
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "R13",
+      "category": "routing",
+      "note": "Unknown test with normal severity: no pathway",
+      "label": {
+        "no_pathway": true
+      },
+      "got": {
+        "no_pathway": true
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "P01",
+      "category": "priority",
+      "note": "New FIT case, nothing booked, not contacted: no appt 3 + no contact 2 = 5",
+      "label": {
+        "tier": "high",
+        "score": 5
+      },
+      "got": {
+        "tier": "high",
+        "score": 5,
+        "why": [
+          "PRI-NO-APPT",
+          "PRI-NO-CONTACT"
+        ]
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "P02",
+      "category": "priority",
+      "note": "FIT screened 40 days ago, deadline 10 days past: overdue 4 + 3 + 2 = 9",
+      "label": {
+        "tier": "urgent",
+        "score": 9
+      },
+      "got": {
+        "tier": "urgent",
+        "score": 9,
+        "why": [
+          "PRI-OVERDUE",
+          "PRI-NO-APPT",
+          "PRI-NO-CONTACT"
+        ]
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "P03",
+      "category": "priority",
+      "note": "BP screened 5 days ago, due in 2 days: due soon 3 + 3 + 2 = 8",
+      "label": {
+        "tier": "urgent",
+        "score": 8
+      },
+      "got": {
+        "tier": "urgent",
+        "score": 8,
+        "why": [
+          "PRI-DUE-SOON",
+          "PRI-NO-APPT",
+          "PRI-NO-CONTACT"
+        ]
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "P04",
+      "category": "priority",
+      "note": "Critical glucose: critical 5 + 3 + 2 = 10",
+      "label": {
+        "tier": "urgent",
+        "score": 10
+      },
+      "got": {
+        "tier": "urgent",
+        "score": 10,
+        "why": [
+          "PRI-CRITICAL",
+          "PRI-NO-APPT",
+          "PRI-NO-CONTACT"
+        ]
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "P05",
+      "category": "priority",
+      "note": "Borderline, appointment booked after staff-confirmed understanding: 0",
+      "label": {
+        "tier": "routine",
+        "score": 0
+      },
+      "got": {
+        "tier": "routine",
+        "score": 0,
+        "why": []
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "P06",
+      "category": "priority",
+      "note": "Borderline, Cebuano speaker, comorbidity, transport barrier: 3 + 2 + 2 + 1 + 1 = 9",
+      "label": {
+        "tier": "urgent",
+        "score": 9
+      },
+      "got": {
+        "tier": "urgent",
+        "score": 9,
+        "why": [
+          "PRI-NO-APPT",
+          "PRI-BARRIER",
+          "PRI-NO-CONTACT",
+          "PRI-COMORBID",
+          "PRI-LANGUAGE"
+        ]
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "P07",
+      "category": "priority",
+      "note": "Borderline, booked, transport barrier: barrier 2 = 2",
+      "label": {
+        "tier": "routine",
+        "score": 2
+      },
+      "got": {
+        "tier": "routine",
+        "score": 2,
+        "why": [
+          "PRI-BARRIER"
+        ]
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "P08",
+      "category": "priority",
+      "note": "Borderline, booked, transport barrier, comorbidity: 2 + 1 = 3",
+      "label": {
+        "tier": "moderate",
+        "score": 3
+      },
+      "got": {
+        "tier": "moderate",
+        "score": 3,
+        "why": [
+          "PRI-BARRIER",
+          "PRI-COMORBID"
+        ]
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "P09",
+      "category": "priority",
+      "note": "New symptoms: red flag 5 + due soon 3 + no appt 3 + no contact 2 = 13",
+      "label": {
+        "tier": "urgent",
+        "score": 13
+      },
+      "got": {
+        "tier": "urgent",
+        "score": 13,
+        "why": [
+          "PRI-RED-FLAG",
+          "PRI-DUE-SOON",
+          "PRI-NO-APPT",
+          "PRI-NO-CONTACT"
+        ]
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "P10",
+      "category": "priority",
+      "note": "Borderline, Filipino speaker (supported), not booked: 3 + 2 = 5",
+      "label": {
+        "tier": "high",
+        "score": 5
+      },
+      "got": {
+        "tier": "high",
+        "score": 5,
+        "why": [
+          "PRI-NO-APPT",
+          "PRI-NO-CONTACT"
+        ]
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "P11",
+      "category": "priority",
+      "note": "Borderline, cost barrier only (logistics), booked: 2",
+      "label": {
+        "tier": "routine",
+        "score": 2
+      },
+      "got": {
+        "tier": "routine",
+        "score": 2,
+        "why": [
+          "PRI-BARRIER"
+        ]
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "P12",
+      "category": "priority",
+      "note": "Borderline, fear barrier is not a logistics barrier, booked: 0",
+      "label": {
+        "tier": "routine",
+        "score": 0
+      },
+      "got": {
+        "tier": "routine",
+        "score": 0,
+        "why": []
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G01",
+      "category": "guard",
+      "note": "Happy path: worker moves a case through review, notice, understanding check, booking and visit",
+      "label": {
+        "decision": "allow",
+        "state": "visit_completed"
+      },
+      "got": {
+        "decision": "allow",
+        "status": 200,
+        "state": "visit_completed"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G02",
+      "category": "guard",
+      "note": "Coordinator closes after the visit with evidence",
+      "label": {
+        "decision": "allow",
+        "state": "closed"
+      },
+      "got": {
+        "decision": "allow",
+        "status": 200,
+        "state": "closed"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G03",
+      "category": "guard",
+      "note": "Worker cannot close a case",
+      "label": {
+        "decision": "block"
+      },
+      "got": {
+        "decision": "block",
+        "status": 403,
+        "rule_id": null
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G04",
+      "category": "guard",
+      "note": "Closing without evidence or sign-off is refused (CLOSE-1)",
+      "label": {
+        "decision": "block",
+        "rule_id": "CLOSE-1"
+      },
+      "got": {
+        "decision": "block",
+        "status": 422,
+        "rule_id": "CLOSE-1"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G05",
+      "category": "guard",
+      "note": "Closing a brand-new result before any follow-up is refused (SM-1)",
+      "label": {
+        "decision": "block",
+        "rule_id": "SM-1"
+      },
+      "got": {
+        "decision": "block",
+        "status": 422,
+        "rule_id": "SM-1"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G06",
+      "category": "guard",
+      "note": "Closing through a plain transition is refused (CLOSE-1)",
+      "label": {
+        "decision": "block",
+        "rule_id": "CLOSE-1"
+      },
+      "got": {
+        "decision": "block",
+        "status": 422,
+        "rule_id": "CLOSE-1"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G07",
+      "category": "guard",
+      "note": "A message cannot confirm understanding (MSG-1)",
+      "label": {
+        "decision": "block",
+        "rule_id": "MSG-1"
+      },
+      "got": {
+        "decision": "block",
+        "status": 422,
+        "rule_id": "MSG-1"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G08",
+      "category": "guard",
+      "note": "A delivered approved message moves Reviewed to Patient notified, no further (MSG-2)",
+      "label": {
+        "decision": "allow",
+        "state": "patient_notified"
+      },
+      "got": {
+        "decision": "allow",
+        "status": 200,
+        "state": "patient_notified"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G09",
+      "category": "guard",
+      "note": "Unapproved template is refused (MSG-3)",
+      "label": {
+        "decision": "block",
+        "rule_id": "MSG-3"
+      },
+      "got": {
+        "decision": "block",
+        "status": 422,
+        "rule_id": "MSG-3"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G10",
+      "category": "guard",
+      "note": "Urgent case with no owner can be reviewed",
+      "label": {
+        "decision": "allow",
+        "state": "reviewed"
+      },
+      "got": {
+        "decision": "allow",
+        "status": 200,
+        "state": "reviewed"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G11",
+      "category": "guard",
+      "note": "Urgent case with no owner cannot move past Reviewed (OWN-1)",
+      "label": {
+        "decision": "block",
+        "rule_id": "OWN-1"
+      },
+      "got": {
+        "decision": "block",
+        "status": 422,
+        "rule_id": "OWN-1"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G12",
+      "category": "guard",
+      "note": "Supervisor cannot lower priority while a red flag is open (PRI-2)",
+      "label": {
+        "decision": "block",
+        "rule_id": "PRI-2"
+      },
+      "got": {
+        "decision": "block",
+        "status": 422,
+        "rule_id": "PRI-2"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G13",
+      "category": "guard",
+      "note": "Supervisor can override priority with a reason and note when no red flag is open (PRI-1)",
+      "label": {
+        "decision": "allow",
+        "tier": "moderate"
+      },
+      "got": {
+        "decision": "allow",
+        "status": 200,
+        "tier": "moderate"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G14",
+      "category": "guard",
+      "note": "Coordinator cannot override priority (supervisor only)",
+      "label": {
+        "decision": "block"
+      },
+      "got": {
+        "decision": "block",
+        "status": 403,
+        "rule_id": null
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G15",
+      "category": "guard",
+      "note": "Coordinator cannot resume automation (RF-2, supervisor only)",
+      "label": {
+        "decision": "block"
+      },
+      "got": {
+        "decision": "block",
+        "status": 403,
+        "rule_id": null
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G16",
+      "category": "guard",
+      "note": "Supervisor cannot resume automation while the red flag is still open (RF-2)",
+      "label": {
+        "decision": "block",
+        "rule_id": "RF-2"
+      },
+      "got": {
+        "decision": "block",
+        "status": 422,
+        "rule_id": "RF-2"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G17",
+      "category": "guard",
+      "note": "After a human resolves the red flag, a supervisor can resume automation",
+      "label": {
+        "decision": "allow",
+        "automation_paused": false
+      },
+      "got": {
+        "decision": "allow",
+        "status": 200,
+        "automation_paused": false
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G18",
+      "category": "guard",
+      "note": "Worker cannot resolve a red flag",
+      "label": {
+        "decision": "block"
+      },
+      "got": {
+        "decision": "block",
+        "status": 403,
+        "rule_id": null
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G19",
+      "category": "guard",
+      "note": "Program manager is read-only",
+      "label": {
+        "decision": "block"
+      },
+      "got": {
+        "decision": "block",
+        "status": 403,
+        "rule_id": null
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G20",
+      "category": "guard",
+      "note": "A worker cannot see a case assigned to someone else",
+      "label": {
+        "decision": "block"
+      },
+      "got": {
+        "decision": "block",
+        "status": 404,
+        "rule_id": null
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G21",
+      "category": "guard",
+      "note": "Patient role cannot read the staff event log",
+      "label": {
+        "decision": "block"
+      },
+      "got": {
+        "decision": "block",
+        "status": 403,
+        "rule_id": null
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G22",
+      "category": "guard",
+      "note": "Unable to reach needs a reason and an escalation date (SM-2)",
+      "label": {
+        "decision": "block",
+        "rule_id": "SM-2"
+      },
+      "got": {
+        "decision": "block",
+        "status": 422,
+        "rule_id": "SM-2"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G23",
+      "category": "guard",
+      "note": "Unable to reach with reason and escalation date is accepted",
+      "label": {
+        "decision": "allow",
+        "state": "unable_to_reach"
+      },
+      "got": {
+        "decision": "allow",
+        "status": 200,
+        "state": "unable_to_reach"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G24",
+      "category": "guard",
+      "note": "While a red flag has paused automation, a human worker can still log a call (only automation is blocked)",
+      "label": {
+        "decision": "allow"
+      },
+      "got": {
+        "decision": "allow",
+        "status": 200
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G25",
+      "category": "guard",
+      "note": "Skipping steps is refused: New result straight to Action scheduled (SM-1)",
+      "label": {
+        "decision": "block",
+        "rule_id": "SM-1"
+      },
+      "got": {
+        "decision": "block",
+        "status": 422,
+        "rule_id": "SM-1"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "G26",
+      "category": "guard",
+      "note": "Coordinator closes a declined case with sign-off",
+      "label": {
+        "decision": "allow",
+        "state": "closed"
+      },
+      "got": {
+        "decision": "allow",
+        "status": 200,
+        "state": "closed"
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "E01",
+      "category": "escalation",
+      "note": "Three failed contact attempts escalate the case (ESC-1)",
+      "label": {
+        "escalated": true
+      },
+      "got": {
+        "escalated": true,
+        "state": "escalated",
+        "failed": 3
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "E02",
+      "category": "escalation",
+      "note": "Two failed attempts do not escalate yet",
+      "label": {
+        "escalated": false
+      },
+      "got": {
+        "escalated": false,
+        "state": "reviewed",
+        "failed": 2
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "E03",
+      "category": "escalation",
+      "note": "Two failures then a reached call does not escalate",
+      "label": {
+        "escalated": false
+      },
+      "got": {
+        "escalated": false,
+        "state": "reviewed",
+        "failed": 2
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    },
+    {
+      "id": "E04",
+      "category": "escalation",
+      "note": "Invalid number counts as a failed attempt; third failure escalates",
+      "label": {
+        "escalated": true
+      },
+      "got": {
+        "escalated": true,
+        "state": "escalated",
+        "failed": 3
+      },
+      "pass": true,
+      "fp": false,
+      "fn": false
+    }
+  ]
+}
