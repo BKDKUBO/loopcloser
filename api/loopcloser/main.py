@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from . import auth
-from .ai.assist import summarize_case
+from .ai.assist import AI_LABEL, PROMPT_VERSION, AIBackend, prepare_call, summarize_case
 from .auth import Principal, require
 from .config import Config, get_config
 from .domain import commands as cmd
@@ -151,6 +151,10 @@ class MessageIn(BaseModel):
     clinic: str | None = None
 
 
+class DecisionIn(BaseModel):
+    decision: str
+
+
 class ClockIn(BaseModel):
     advance_days: int = Field(ge=0, le=30)
 
@@ -171,6 +175,13 @@ def create_app(
     templates = default_templates()
     steps = ladder_mod.load_ladder(cfg.ladder_json)
     clock: dict[str, Any] = {"offset_days": 0, "checked": 0.0}
+    ai_backend = AIBackend(
+        kind=cfg.gemini_backend,
+        model=cfg.gemini_model,
+        project=cfg.vertex_project,
+        location=cfg.vertex_location,
+        api_key=cfg.gemini_api_key,
+    )
     indexed: dict[str, Any] = {"as_of": None, "full": False}
 
     def _refresh_clock() -> None:
@@ -298,7 +309,9 @@ def create_app(
         problems = lib.lock_mismatches()
         checks["pathways"] = len(lib.latest()) if not problems else "lock mismatch"
         checks["auth_mode"] = cfg.auth_mode
-        checks["ai"] = "gemini" if cfg.gemini_api_key else "mock"
+        checks["ai"] = (
+            f"gemini via {ai_backend.kind} ({ai_backend.model}, {ai_backend.location})" if ai_backend.live else "mock"
+        )
         tpl_problems = templates.lock_mismatches()
         checks["templates"] = len(templates.latest()) if not tpl_problems else "lock mismatch"
         ok = checks["storage"] != "down" and not problems and not tpl_problems
@@ -617,8 +630,115 @@ def create_app(
     def ai_summary(case_id: str, p: Principal = Depends(require(Perm.CASE_NOTE))) -> dict[str, Any]:
         """Returns a labeled draft. It does not change the case."""
         v = _get_visible(case_id, p)
-        d = summarize_case(_out(v, p), api_key=cfg.gemini_api_key, model=cfg.gemini_model)
+        d = summarize_case(_out(v, p), backend=ai_backend)
         return {"text": d.text, "label": d.label, "model": d.model, "mock": d.mock}
+
+    def _call_facts(v: CaseView) -> dict[str, Any]:
+        """Masked facts for the call-prep draft. No names, phones or free-text notes."""
+        t = today()
+        pr = prio.compute(v, t)
+        pw = lib.get(v.pathway_id, v.pathway_version)
+        facts: dict[str, Any] = {
+            "case_id": v.id,
+            "today": t.isoformat(),
+            "status": v.state.value.replace("_", " "),
+            "screening_type": v.screening_type,
+            "pathway": pw.name if pw else v.pathway_id,
+            "next_action": v.next_action,
+            "due_date": v.due_date.isoformat() if v.due_date else None,
+            "contact_attempts": v.contact_attempts,
+            "failed_contact_attempts": v.failed_contact_attempts,
+            "reached_contacts": v.reached_contacts,
+            "missed_appointments": v.no_show_count,
+            "open_barriers": list(v.barriers_open),
+            "patient_language": {"en": "English", "fil": "Filipino"}.get(v.language, v.language),
+            "follow_up_priority": f"{pr.tier} ({pr.score} points)",
+            "priority_reasons": [r["label"] for r in pr.reasons],
+            # Chosen by rule, not by the model: which approved template fits this step.
+            "approved_template_to_use": (
+                "result-notice"
+                if v.state == CaseState.REVIEWED
+                else "booking-confirmation"
+                if v.state == CaseState.ACTION_SCHEDULED
+                else "reminder"
+            ),
+        }
+        if v.due_date:
+            days = (v.due_date - t).days
+            facts["days_until_due" if days >= 0 else "days_overdue"] = abs(days)
+        if v.appointment:
+            facts["appointment"] = {k: v.appointment.get(k) for k in ("date", "clinic", "site") if v.appointment.get(k)}
+        return facts
+
+    def _draft_out(d: dict[str, Any] | None) -> dict[str, Any] | None:
+        """What staff see. Unverified text is withheld, with the reason."""
+        if d is None:
+            return None
+        verified = bool(d.get("verified"))
+        return {
+            "draft_seq": d["draft_seq"],
+            "at": d["at"],
+            "by": d["by"],
+            "label": AI_LABEL,
+            "model": d.get("model"),
+            "mock": d.get("mock", True),
+            "verified": verified,
+            "text": d.get("text") if verified else None,
+            "unsupported": d.get("unsupported", []),
+            "checked_count": d.get("checked_count", 0),
+            "decision": d.get("decision"),
+            "decided_by": d.get("decided_by"),
+        }
+
+    @app.post("/api/ai/cases/{case_id}/call-prep")
+    def call_prep(case_id: str, p: Principal = Depends(require(Perm.CASE_NOTE))) -> dict[str, Any]:
+        """Staff-only AI draft to read before phoning the patient. Logged as an event; changes nothing else."""
+        _get_visible(case_id, p)
+        v = cmd.check_ai_draft_allowed(repo, case_id, actor=p.actor)
+        facts = _call_facts(v)
+        d = prepare_call(facts, backend=ai_backend)
+        ver = d.verification
+        payload = {
+            "kind": "call_prep",
+            "prompt_version": PROMPT_VERSION,
+            "model": d.model,
+            "mock": d.mock,
+            "text": d.text,
+            "verified": bool(ver and ver.verified),
+            "unsupported": ver.unsupported if ver else [],
+            "checked_count": len(ver.checked) if ver else 0,
+            "usage": d.usage,
+            "latency_ms": d.latency_ms,
+        }
+        log.info(
+            "ai draft",
+            extra={
+                "fields": {
+                    "case": case_id,
+                    "model": d.model,
+                    "mock": d.mock,
+                    "verified": payload["verified"],
+                    "usage": d.usage,
+                    "latency_ms": d.latency_ms,
+                }
+            },
+        )
+        _, seq = cmd.record_ai_draft(repo, case_id, actor=p.actor, payload=payload, now=now())
+        return {"draft": _draft_out(cmd.latest_ai_draft(repo, case_id)), "draft_seq": seq}
+
+    @app.get("/api/ai/cases/{case_id}/call-prep")
+    def call_prep_latest(case_id: str, p: Principal = Depends(require(Perm.CASE_NOTE))) -> dict[str, Any]:
+        _get_visible(case_id, p)
+        return {"draft": _draft_out(cmd.latest_ai_draft(repo, case_id))}
+
+    @app.post("/api/ai/cases/{case_id}/call-prep/{draft_seq}/decision")
+    def call_prep_decision(
+        case_id: str, draft_seq: int, body: DecisionIn, p: Principal = Depends(require(Perm.CASE_NOTE))
+    ) -> dict[str, Any]:
+        """Use or Discard. Audit only: the case state does not change."""
+        _get_visible(case_id, p)
+        cmd.decide_ai_draft(repo, case_id, actor=p.actor, draft_seq=draft_seq, decision=body.decision, now=now())
+        return {"draft": _draft_out(cmd.latest_ai_draft(repo, case_id))}
 
     # -------------------------------------------------------------- admin
 

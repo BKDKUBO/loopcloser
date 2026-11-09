@@ -14,8 +14,8 @@ export function SafetyLine({ pathway }: { pathway?: string }) {
           sign-off. Nothing closes automatically.</li>
         <li><strong>Red flags stop automation</strong> until a person resolves them, and only a supervisor
           can turn it back on.</li>
-        <li><strong>AI never decides.</strong> No AI output is shown on this page. Patient messages use
-          approved templates only.</li>
+        <li><strong>AI only drafts, for staff.</strong> The optional call guide is labeled, checked number by number
+          against the record, logged, and never changes the case. Patient messages use approved templates only.</li>
       </ol>
     </section>
   );

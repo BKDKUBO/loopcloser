@@ -47,6 +47,9 @@ class EventType(StrEnum):
     BARRIER_RESOLVED = "barrier_resolved"
     PRIORITY_OVERRIDDEN = "priority_overridden"
     LADDER_STEP = "ladder_step"
+    # AI drafts for staff. Audit only: they never change case state (see case.py).
+    AI_DRAFT_CREATED = "ai_draft_created"
+    AI_DRAFT_DECISION = "ai_draft_decision"
 
 
 class Event(BaseModel):

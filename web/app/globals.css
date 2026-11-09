@@ -34,3 +34,6 @@ input, textarea { font-size: 16px; padding: 6px; border: 1px solid var(--line); 
 
 .safety { border-left: 4px solid var(--warn); }
 .safety ol { margin: 4px 0 0 18px; padding: 0; }
+.callprep { border-left: 4px solid var(--accent); }
+.draft { white-space: pre-wrap; font-family: inherit; background: #f6f6f6; padding: 8px; border-radius: 6px; }
+.ok { color: #1a7f37; }
