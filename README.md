@@ -194,7 +194,7 @@ project setup, billing and cost.
   health worker, Day 10 supervisor (case escalates), Day 14 unresolved review (`domain/ladder.py`, rule LAD-1).
   In demo mode a supervisor can advance a simulated clock to watch it run.
 
-Screenshots of the live demo: `docs/screenshots/live/`. Deploy plan: `docs/deploy-plan.md`.
+Screenshots of the live demo: `docs/screenshots/live/` (05 shows a verified "Prepare for the call" draft). Deploy plan: `docs/deploy-plan.md`.
 
 ## Run locally
 
