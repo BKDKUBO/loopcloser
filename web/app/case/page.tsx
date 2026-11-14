@@ -1,21 +1,63 @@
 "use client";
 
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { CallPrep } from "@/components/CallPrep";
 import { CaseActions } from "@/components/CaseActions";
+import { ConfirmButton } from "@/components/ConfirmButton";
 import { PriorityBadge, WhyPriority } from "@/components/Priority";
 import { RequireRole } from "@/components/RequireRole";
+import { RevealContact } from "@/components/RevealContact";
 import { SafetyLine } from "@/components/SafetyLine";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
-import { humanState } from "@/lib/lanes";
+import {
+  BARRIER_LABELS, OVERRIDE_REASON_LABELS, SCREENING_LABELS, STATE_LABELS, actorLabel, dueText, label, ownerLabel,
+} from "@/lib/labels";
+import { describeEvent } from "@/lib/timeline";
 import { useCaseAction } from "@/lib/useCaseAction";
 import type { CaseEvent, CaseView } from "@/lib/types";
 
-const OVERRIDE_REASONS = ["duplicate", "already_treated", "worsening_symptoms", "completed_elsewhere", "data_error",
-  "clinical_judgment_documented", "other"];
-const BARRIERS = ["transport", "cost", "work", "language", "digital", "childcare", "fear"];
+const OVERRIDE_REASONS = Object.keys(OVERRIDE_REASON_LABELS);
+const BARRIERS = Object.keys(BARRIER_LABELS);
+
+function CloseWithEvidence({ c, run, busy }: { c: CaseView; run: ReturnType<typeof useCaseAction>["run"]; busy: boolean }) {
+  const [visit, setVisit] = useState(c.appointment?.date ?? "");
+  const [facility, setFacility] = useState(c.appointment?.clinic ?? "");
+  const [record, setRecord] = useState("");
+  const [reason, setReason] = useState("Visit completed");
+  const missing = [!visit && "visit date", !facility.trim() && "facility", !record.trim() && "record number", !reason.trim() && "reason"]
+    .filter(Boolean) as string[];
+  return (
+    <fieldset><legend>Close with evidence</legend>
+      <label>Visit date <input type="date" value={visit} onChange={(e) => setVisit(e.target.value)} required /></label>
+      <label>Facility <input value={facility} onChange={(e) => setFacility(e.target.value)} maxLength={120} required /></label>
+      <label>Record number <input value={record} onChange={(e) => setRecord(e.target.value)} maxLength={40} required
+        placeholder="e.g. RHU-A 2211" /></label>
+      <label>Reason <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} /></label>
+      {missing.length > 0 && <p className="muted">Needed before closing: {missing.join(", ")} (rule CLOSE-1).</p>}
+      <ConfirmButton disabled={busy || missing.length > 0} confirm="Close this case? Closing cannot be undone."
+        onConfirm={() => run(`/api/cases/${c.id}/close`,
+          { closure_reason: reason, evidence: { visit_date: visit, facility, record_number: record } }, undefined, "Closed with evidence.")}>
+        Close with evidence
+      </ConfirmButton>
+    </fieldset>
+  );
+}
+
+function CloseWithSignOff({ c, run, busy }: { c: CaseView; run: ReturnType<typeof useCaseAction>["run"]; busy: boolean }) {
+  const [reason, setReason] = useState("");
+  return (
+    <fieldset><legend>Close with your sign-off</legend>
+      <label>Reason (what the patient decided, what they were told) <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} /></label>
+      <ConfirmButton disabled={busy || !reason.trim()} confirm="Sign off and close? Your name is recorded."
+        onConfirm={() => run(`/api/cases/${c.id}/close`, { closure_reason: reason, sign_off: true }, undefined, "Closed with sign-off.")}>
+        Sign off and close
+      </ConfirmButton>
+    </fieldset>
+  );
+}
 
 function NextActionPanel({ c, onChange }: { c: CaseView; onChange: (c: CaseView) => void }) {
   const s = useSession();
@@ -23,52 +65,56 @@ function NextActionPanel({ c, onChange }: { c: CaseView; onChange: (c: CaseView)
   const [reason, setReason] = useState("");
   const [date, setDate] = useState(c.due_date ?? "");
   const [clinic, setClinic] = useState("Site A clinic");
-  const [evidence, setEvidence] = useState("");
   const ra = c.recommended_action;
   const isLead = s.role === "coordinator" || s.role === "supervisor";
   const t = (target: string, extra: Record<string, unknown> = {}, ok = "Done.") =>
     run(`/api/cases/${c.id}/transition`, { target, ...extra }, undefined, ok);
+  const oneClick = ra?.kind === "transition" && ra.target && ra.target !== "action_scheduled";
+  const callPrepBlocked = c.red_flag_open ? "Red flag open: a person handles this case, no AI drafts (rule AI-2)." : undefined;
 
   return (
     <aside className="sticky" aria-labelledby="nap">
       <h2 id="nap">Next action</h2>
       <p><strong>{ra?.label}</strong></p>
-      <p className="muted">Why: case is at &quot;{humanState(c.state)}&quot;, due {c.due_date ?? "not set"}.
+      <p className="muted">Why: the case is at &quot;{label(STATE_LABELS, c.state)}&quot;
+        {c.plain_status === "done" ? "." : ` and is ${dueText(c.days_to_due).toLowerCase()}.`}
         {c.next_action ? ` Pathway step: ${c.next_action}` : ""}</p>
       {c.state !== "closed" && (
         <>
-          {ra?.kind === "transition" && ra.target && ra.target !== "action_scheduled" && (
-            <button className="primary" disabled={busy}
-              onClick={() => t(ra.target!, ra.target === "understanding_confirmed" ? { source: "staff_confirmed" } : {})}>
-              Complete next action
-            </button>
+          {oneClick && (
+            <ConfirmButton primary disabled={busy} confirm={`Mark as "${label(STATE_LABELS, ra!.target)}"?`}
+              onConfirm={() => t(ra!.target!, ra!.target === "understanding_confirmed" ? { source: "staff_confirmed" } : {},
+                `Done: ${label(STATE_LABELS, ra!.target)}.`)}>
+              Complete: {label(STATE_LABELS, ra!.target)}
+            </ConfirmButton>
           )}
           {(ra?.target === "action_scheduled" || ["understanding_confirmed", "rescheduled", "no_show"].includes(c.state)) && (
             <fieldset><legend>Book appointment (simulated slots)</legend>
               <label>Date <input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>{" "}
               <label>Clinic <input value={clinic} onChange={(e) => setClinic(e.target.value)} /></label>{" "}
-              <button className="primary" disabled={busy || !date}
-                onClick={() => t("action_scheduled", { appointment: { date, clinic } }, "Appointment booked.")}>Book</button>
+              <ConfirmButton primary disabled={busy || !date} confirm={`Book ${date} at ${clinic}?`}
+                onConfirm={() => t("action_scheduled", { appointment: { date, clinic } }, "Appointment booked.")}>Book</ConfirmButton>
             </fieldset>
           )}
-          {ra?.kind === "close" && isLead && (
-            <fieldset><legend>Close case</legend>
-              <label>Evidence (visit record or upload id) <input value={evidence} onChange={(e) => setEvidence(e.target.value)} /></label>
-              <label>Reason <input value={reason} onChange={(e) => setReason(e.target.value)} /></label>
-              <button disabled={busy || !reason || !evidence} onClick={() => run(`/api/cases/${c.id}/close`,
-                { closure_reason: reason, evidence_ref: evidence }, undefined, "Closed.")}>Close with evidence</button>
-            </fieldset>
-          )}
-          <div className="row">
-            {c.state === "action_scheduled" && (
-              <button disabled={busy || !reason} onClick={() => t("rescheduled", { reason }, "Marked for rescheduling.")}>Reschedule</button>
-            )}
-            <button disabled={busy || !reason} onClick={() => t("escalated", { reason }, "Escalated.")}>Escalate</button>
-          </div>
-          <label>Reason (needed to reschedule or escalate){" "}
-            <input value={reason} onChange={(e) => setReason(e.target.value)} /></label>
+          {ra?.kind === "close" && isLead && (c.state === "visit_completed"
+            ? <CloseWithEvidence c={c} run={run} busy={busy} />
+            : <CloseWithSignOff c={c} run={run} busy={busy} />)}
+          {ra?.kind === "close" && !isLead && <p className="muted">Only a coordinator or supervisor can close a case (rule CLOSE-2).</p>}
           <hr />
-          <CaseActions c={c} onChange={onChange} />
+          <CaseActions c={c} onChange={onChange} showRecommended={false}
+            extra={<CallPrep caseId={c.id} onLogged={() => onChange(c)} disabledReason={callPrepBlocked} />} />
+          <details>
+            <summary>Reschedule or escalate</summary>
+            <label>Reason (needed){" "}<input value={reason} onChange={(e) => setReason(e.target.value)} /></label>
+            <div className="row">
+              {c.state === "action_scheduled" && (
+                <ConfirmButton disabled={busy || !reason} confirm="Mark for rescheduling?"
+                  onConfirm={() => t("rescheduled", { reason }, "Marked for rescheduling.")}>Reschedule</ConfirmButton>
+              )}
+              <ConfirmButton disabled={busy || !reason} confirm="Escalate to the supervisor?"
+                onConfirm={() => t("escalated", { reason }, "Escalated.")}>Escalate</ConfirmButton>
+            </div>
+          </details>
         </>
       )}
       {notice && <p className="ok" role="status">{notice}</p>}
@@ -83,41 +129,53 @@ function OverrideForm({ c, onChange }: { c: CaseView; onChange: (c: CaseView) =>
   const [reason, setReason] = useState("worsening_symptoms");
   const [note, setNote] = useState("");
   return (
-    <fieldset><legend>Supervisor override (logged as an event)</legend>
+    <details><summary>Supervisor override (logged as an event)</summary>
       <div className="row">
         <label>Tier <select value={tier} onChange={(e) => setTier(e.target.value)}>
-          {["urgent", "high", "moderate", "routine"].map((x) => <option key={x}>{x}</option>)}
-          <option value="">clear override</option></select></label>
+          {["urgent", "high", "moderate", "routine"].map((x) => <option key={x} value={x}>{x[0].toUpperCase() + x.slice(1)}</option>)}
+          <option value="">Clear override</option></select></label>
         <label>Reason <select value={reason} onChange={(e) => setReason(e.target.value)}>
-          {OVERRIDE_REASONS.map((x) => <option key={x}>{x}</option>)}</select></label>
+          {OVERRIDE_REASONS.map((x) => <option key={x} value={x}>{OVERRIDE_REASON_LABELS[x]}</option>)}</select></label>
         <label>Note <input value={note} onChange={(e) => setNote(e.target.value)} /></label>
-        <button disabled={busy || !note.trim()} onClick={() => run(`/api/cases/${c.id}/priority-override`,
-          { tier: tier || null, reason, note }, undefined, "Override saved.")}>Save override</button>
+        <ConfirmButton disabled={busy || !note.trim()} confirm="Save this override?" onConfirm={() => run(`/api/cases/${c.id}/priority-override`,
+          { tier: tier || null, reason, note }, undefined, "Override saved.")}>Save override</ConfirmButton>
       </div>
       {notice && <p className="ok">{notice}</p>}{error && <p className="error" role="alert">{error}</p>}
-    </fieldset>
+    </details>
+  );
+}
+
+/** One open barrier, with its own resolution text and result (each barrier keeps its own state). */
+function BarrierItem({ c, barrier, onChange }: { c: CaseView; barrier: string; onChange: (c: CaseView) => void }) {
+  const { run, busy, error, notice } = useCaseAction(onChange);
+  const [res, setRes] = useState("");
+  return (
+    <li>{label(BARRIER_LABELS, barrier)}{" "}
+      <input aria-label={`How was ${label(BARRIER_LABELS, barrier)} resolved`} placeholder="How it was resolved" value={res}
+        onChange={(e) => setRes(e.target.value)} />{" "}
+      <button disabled={busy || !res.trim()} onClick={() => run(`/api/cases/${c.id}/barriers`, { barrier, resolution: res },
+        undefined, "Resolved.")}>Resolve</button>
+      {notice && <span className="ok" role="status"> {notice}</span>}
+      {error && <span className="error" role="alert"> {error}</span>}
+    </li>
   );
 }
 
 function Barriers({ c, onChange }: { c: CaseView; onChange: (c: CaseView) => void }) {
   const { run, busy, error } = useCaseAction(onChange);
   const [b, setB] = useState("transport");
-  const [res, setRes] = useState("");
   return (
     <section aria-labelledby="bar"><h2 id="bar">Barriers</h2>
       {(c.barriers_open ?? []).length === 0 ? <p className="muted">No open barriers.</p> : (
-        <ul>{c.barriers_open!.map((x) => (
-          <li key={x}>{x}{" "}
-            <input aria-label={`How was ${x} resolved`} placeholder="How it was resolved" value={res}
-              onChange={(e) => setRes(e.target.value)} />{" "}
-            <button disabled={busy || !res} onClick={() => run(`/api/cases/${c.id}/barriers`, { barrier: x, resolution: res })}>Resolve</button>
-          </li>))}</ul>
+        <ul>{c.barriers_open!.map((x) => <BarrierItem key={x} c={c} barrier={x} onChange={onChange} />)}</ul>
       )}
-      <div className="row">
-        <select aria-label="Barrier type" value={b} onChange={(e) => setB(e.target.value)}>
-          {BARRIERS.map((x) => <option key={x}>{x}</option>)}</select>
-        <button disabled={busy} onClick={() => run(`/api/cases/${c.id}/barriers`, { barrier: b })}>Report barrier</button>
-      </div>
+      {c.state !== "closed" && (
+        <div className="row">
+          <select aria-label="Barrier type" value={b} onChange={(e) => setB(e.target.value)}>
+            {BARRIERS.map((x) => <option key={x} value={x}>{BARRIER_LABELS[x]}</option>)}</select>
+          <button disabled={busy} onClick={() => run(`/api/cases/${c.id}/barriers`, { barrier: b })}>Report barrier</button>
+        </div>
+      )}
       {error && <p className="error" role="alert">{error}</p>}
     </section>
   );
@@ -144,44 +202,49 @@ function CaseDetail() {
   if (!id) return <p>No case selected.</p>;
   if (err) return <p className="error" role="alert">{err}</p>;
   if (!c) return <p>Loading…</p>;
+  const closed = c.state === "closed";
+  const overdue = (c.days_to_due ?? 0) < 0 && !closed && c.plain_status !== "done";
+  const ev = c.closure_evidence_detail;
   return (
     <>
-      <h1>Case {c.id} · {c.participant_id}</h1>
+      <h1>Case {c.id} <span className="muted">· {c.participant_id}</span></h1>
+      <p><RevealContact caseId={c.id} synthetic={c.synthetic} onLogged={changed} /></p>
       <p>
         <PriorityBadge p={c.priority} />
-        <span className={`badge ${c.clinical_urgency === "urgent" ? "urgent" : ""}`}>Clinical urgency: {c.clinical_urgency}</span>
-        <span className="badge">Status: {humanState(c.state)}</span>
-        <span className="badge">Deadline: {c.due_date ?? "not set"}</span>
-        <span className="badge">Owner: {c.owner ?? "none"}</span>
-        <span className="badge pending">Pathway {c.pathway_id} v{c.pathway_version}: pending clinical sign-off</span>
-        {c.synthetic && <span className="badge">SIMULATED</span>}
+        {c.clinical_urgency === "urgent" && <span className="badge urgent">Clinically urgent</span>}
+        <span className={`status status-${c.plain_status}`}>{c.plain_status_label}</span>
+        <span className={`badge ${overdue ? "urgent" : ""}`}>{c.plain_status === "done" ? (closed ? "Closed" : "Visit done") : dueText(c.days_to_due)}</span>
+        <span className="badge">Owner: {ownerLabel(c.owner)}</span>
+        {c.lost_contact && <span className="badge urgent">Lost contact</span>}
       </p>
-      {c.red_flag_open && <p className="error">Red flag open. Automation is paused until a human resolves it.</p>}
-      {c.data_quality.length > 0 && <p className="error">Data quality: {c.data_quality.join(", ")}</p>}
+      <p className="muted">{label(SCREENING_LABELS, c.screening_type)} · status in detail: {label(STATE_LABELS, c.state)} ·
+        {" "}<span className="pending">pathway {c.pathway_id} v{c.pathway_version}, pending clinical sign-off</span> · fictional (SIMULATED) case ·
+        {" "}<Link href={`/phone?id=${encodeURIComponent(c.id)}`}>See the patient&apos;s phone (simulated SMS)</Link></p>
+      {c.red_flag_open && <p className="error">Red flag open. Automation is paused until a person resolves it.</p>}
+      {c.data_quality.includes("no_owner") && !closed && <p className="error">Nobody owns this case yet. Assign an owner.</p>}
+      {closed && (
+        <p className="ok">Closed: {c.closure_reason}.{" "}
+          {ev ? <>Evidence: visit {ev.visit_date} at {ev.facility}, record {ev.record_number}.</> : c.signed_off_by ? <>Signed off by {c.signed_off_by}.</> : c.closure_evidence}</p>
+      )}
       <div className="detail">
         <div>
           <section aria-labelledby="pri"><h2 id="pri">Follow-up priority</h2>
             <p>{c.priority?.explanation}</p>
             <WhyPriority p={c.priority} open />
-            {s.role === "supervisor" && c.state !== "closed" && <OverrideForm c={c} onChange={changed} />}
+            {s.role === "supervisor" && !closed && <OverrideForm c={c} onChange={changed} />}
           </section>
-          <CallPrep caseId={c.id} onLogged={changed}
-            disabledReason={c.state === "closed" ? "Case closed." : c.red_flag_open ? "Red flag open: a person handles this case, no AI drafts (rule AI-2)." : undefined} />
-          <SafetyLine pathway={`${c.pathway_id} v${c.pathway_version}`} />
+          <SafetyLine pathway={`${c.pathway_id} v${c.pathway_version}`} collapsed />
           <Barriers c={c} onChange={changed} />
           <section aria-labelledby="lad"><h2 id="lad">Escalation ladder (day {c.day ?? 0})</h2>
             <ol className="ladder">{(c.ladder ?? []).map((st) => (
               <li key={st.id} className={st.state.replace(" ", "-")}>Day {st.day}: {st.label} · {st.state}</li>))}</ol>
           </section>
-          <section aria-labelledby="tl"><h2 id="tl">Timeline (event log)</h2>
+          <section aria-labelledby="tl"><h2 id="tl">Timeline (full event log)</h2>
             {events.length === 0 ? <p className="muted">No events visible for your role.</p> : (
-              <ol>{events.map((e) => (
-                <li key={e.id}><strong>{e.type.replace(/_/g, " ")}</strong>
-                  {typeof e.payload.to === "string" && <> to {humanState(e.payload.to)}</>}
-                  {typeof e.payload.template_id === "string" && <> ({String(e.payload.template_id)}, {String(e.payload.language)})</>}
-                  {typeof e.payload.step === "string" && <> Day {String(e.payload.day)}: {String(e.payload.action)}</>}
-                  {" "}<span className="muted">by {e.actor.id} ({e.actor.role}{e.actor.kind !== "human" ? `, ${e.actor.kind}` : ""})
-                    {" "}at {new Date(e.at).toLocaleString()}{e.rule_id && <> · rule {e.rule_id}</>}</span>
+              <ol className="timeline">{events.map((e) => (
+                <li key={e.id}>{describeEvent(e)}
+                  <div className="muted small">{actorLabel(e.actor)} · {new Date(e.at).toLocaleString()}
+                    {e.rule_id && <> · rule {e.rule_id}</>} · <code>{e.type}</code></div>
                 </li>))}</ol>
             )}
           </section>

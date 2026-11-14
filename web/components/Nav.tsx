@@ -20,6 +20,8 @@ export function Nav() {
       <nav aria-label="Main">
         <strong>LoopCloser</strong>
         <Link href="/today">Today</Link>
+        {(s.role === "coordinator" || s.role === "supervisor" || s.role === "program_manager") && <Link href="/dashboard">Dashboard</Link>}
+        {(s.role === "coordinator" || s.role === "supervisor") && <Link href="/import">Import</Link>}
         <Link href="/pathways">Pathways</Link>
         <Link href="/status">System status</Link>
         <span style={{ marginLeft: "auto" }} className="muted">

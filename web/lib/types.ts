@@ -57,6 +57,15 @@ export interface CaseView {
   recommended_action?: RecommendedAction;
   ladder?: LadderStep[];
   day?: number;
+  plain_status?: "to_contact" | "booked" | "needs_review" | "done";
+  plain_status_label?: string;
+  lost_contact?: boolean;
+  days_to_due?: number | null;
+  failed_contact_attempts?: number;
+  closure_reason?: string | null;
+  closure_evidence?: string | null;
+  closure_evidence_detail?: { visit_date: string; facility: string; record_number: string } | null;
+  signed_off_by?: string | null;
 }
 
 export interface CaseEvent {
