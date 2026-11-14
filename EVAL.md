@@ -77,6 +77,43 @@ That is a handful of live calls, not a quality benchmark. The checker is tested 
 (`api/tests/test_ai_call_prep.py`): invented dates, phone numbers, counts and blood-pressure values are all
 flagged, and an unverified draft cannot be used.
 
+## Escalation ladder on vs off (targets written before the first run)
+
+**Status: targets only. Committed before the comparison code was run, so the git history shows they were not
+fitted to the results.** Results and any misses are added below this section after the run.
+
+Question: on the same synthetic cohort, what does the escalation ladder change by Day 14, compared with the
+same system with the ladder switched off?
+
+Setup (fixed in advance):
+- Cohort: the demo seed (`POST /api/demo/seed`, n=1000, seed=42), loaded into two separate in-memory stores
+  through the real API. Same rows, same owners, same starting states. All SIMULATED.
+- Ladder on: the default ladder (Day 1, 2, 4, 7, 10, 14). Ladder off: `LADDER_JSON` with only the Day 0
+  upload step, so no step ever runs. Everything else is identical.
+- The demo clock is advanced one day at a time for 14 days (`POST /api/demo/clock`), as a supervisor would
+  in the demo. No simulated staff or patient actions happen in either arm: this isolates what the ladder
+  itself does when nobody follows up, which is the failure LoopCloser is built for.
+- Measured on Day 14, over cases that are still open.
+
+Definitions:
+- **Unowned:** no named owner. **Unaccountable:** no named owner *and* not escalated to a supervisor, so no
+  person is responsible for it.
+- **Overdue:** past its pathway deadline and the visit is not completed. **Silently overdue:** overdue, not
+  booked, not escalated, and automation not paused by a red flag (a red-flag case already has a human task).
+
+Targets:
+
+| # | Measure at Day 14 (open cases) | Ladder off | Ladder on target |
+|---|---|---|---|
+| T1 | Unaccountable (no owner, not escalated) | report the count | **0** |
+| T2 | Silently overdue | report the count | **0** |
+| T3 | Unowned (no named owner) | report the count | same as off: the ladder escalates, it does not assign owners |
+| T4 | Overdue | report the count | same as off: the ladder cannot make a patient attend, so we do not claim it reduces overdue cases without real data |
+| T5 | Cases with a valid phone that got at least one reminder or contact | 0 | **at least 90%** |
+| T6 | Red-flag cases touched by automation | 0 | **0** (rule RF-1) |
+
+Also reported, no target: the supervisor's escalated queue size on Day 14 (workload the ladder creates).
+
 ## Not measured yet
 - Real-world contact success, show rates or closure time. These need a pilot with real (consented) data.
 - Usability with real health workers.
