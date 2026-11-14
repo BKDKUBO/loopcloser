@@ -79,8 +79,8 @@ flagged, and an unverified draft cannot be used.
 
 ## Escalation ladder on vs off (targets written before the first run)
 
-**Status: targets only. Committed before the comparison code was run, so the git history shows they were not
-fitted to the results.** Results and any misses are added below this section after the run.
+**Targets committed before the comparison code was run (commit `d908191`), so the git history shows they were
+not fitted to the results.** Results and misses follow the targets.
 
 Question: on the same synthetic cohort, what does the escalation ladder change by Day 14, compared with the
 same system with the ladder switched off?
@@ -113,6 +113,41 @@ Targets:
 | T6 | Red-flag cases touched by automation | 0 | **0** (rule RF-1) |
 
 Also reported, no target: the supervisor's escalated queue size on Day 14 (workload the ladder creates).
+
+### Results (run 2026-11-14, after the targets above were committed in `d908191`)
+
+Command: `make eval` (`eval/run_eval.py`, full output in `eval/results.json`). Cohort: 1,000 generated patients
+plus the hand-made edge cases and 13 scripted demo stories that the seed also loads (1,018 cases opened, 1,016 still
+open on Day 14, 2026-11-28 on the demo clock). All SIMULATED.
+
+| # | Measure at Day 14 (open cases) | Ladder off | Ladder on | Target | Met? |
+|---|---|---|---|---|---|
+| T1 | Unaccountable (no owner, not escalated) | 177 | 0 | 0 | ✅ |
+| T2 | Silently overdue | 128 | 0 | 0 | ✅ |
+| T3 | Unowned (no named owner) | 177 | 177 | same as off | ✅ |
+| T4 | Overdue | 355 | 355 | same as off | ✅ |
+| T5 | Cases with a valid phone that got at least one reminder or contact | 624 of 892 | 625 of 892 (70.1%) | at least 90% | ❌ **missed** |
+| T6 | Red-flag cases touched by automation | 0 of 2 | 0 of 2 | 0 | ✅ |
+| | Supervisor's escalated queue (no target) | 1 | 379 | | |
+
+**Misses and what they show, plainly:**
+- **T5 missed (70.1% against a 90% target).** The ladder added a contact for only 1 more patient than doing
+  nothing. All 267 reachable patients still uncontacted on Day 14 were results nobody ever reviewed
+  (state *new result*); the ladder escalated every one of them to the supervisor, but its reminder step only
+  runs for reviewed or notified cases, so no patient message went out. This is a real design gap, not a test
+  artifact: if no one reviews a result, the ladder makes it visible but does not reach the patient.
+- **Our "ladder off" target for T5 was also wrong.** We wrote 0, but 624 of 892 reachable patients already had a
+  contact in the seeded history before Day 0. The comparison is still fair (same cohort in both arms), but the
+  off-arm number we predicted was not.
+- **The ladder creates a supervisor flood.** 379 open cases end up in the escalated queue on Day 14 (1 with the
+  ladder off). T1 and T2 are met by moving responsibility to one person, not by getting care done; at real
+  volumes a supervisor could not work 379 cases. T4 confirms it: overdue cases are unchanged (355 in both arms).
+- **What this does not show:** anything about real patients. No staff or patient actions are simulated in either
+  arm, on purpose, so this measures only what the ladder does when nobody acts.
+
+Possible fixes, not built: send the approved reminder to new results with a valid phone once a deadline is
+near (needs clinical sign-off, since the patient would hear about a result before staff review it), and cap or
+batch supervisor escalations with a per-owner digest.
 
 ## Not measured yet
 - Real-world contact success, show rates or closure time. These need a pilot with real (consented) data.

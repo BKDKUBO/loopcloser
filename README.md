@@ -16,20 +16,36 @@ Team BKD KUBO · Future Health Digital Innovation Challenge · Challenge 05: Clo
 > **First load can take about 10 seconds.** The API scales to zero when nobody is using it, so it costs nothing at
 > idle. After the first request it answers in well under a second. All data is **SIMULATED** and fictional.
 
-### 60-second demo path (no sign-in)
-1. Open the live demo and press **Supervisor (demo)** in the Demo mode card.
-2. **Today** shows four lanes (needs action, overdue, waiting for patient, recently completed), highest
-   follow-up priority first. Open the top **Urgent** case.
-3. Read **Why this priority?** (every rule that fired, with its points) and **Who decides what** (the safety line).
-4. Scroll to the **timeline**: every event shows who did it and which rule allowed it.
-5. Back on Today, press **Advance 3 days** (demo clock) and watch the escalation ladder move overdue cases to
-   the next step (reminder, community health worker, supervisor).
-6. On the case page, press **Prepare for the call**. Gemini (Vertex AI) drafts a short guide for the health
-   worker from the masked case record. Every number and date is checked against the record before it is shown;
-   if one does not match, the text is withheld. Press **Use** or **Discard**: both are logged in the timeline and
-   neither changes the case.
-7. Optional: open a case whose next action is "Close with evidence". The close button stays off until you give
-   a reason and evidence, and the API refuses a close without them too (rule CLOSE-1).
+### Demo path: 13 scripted patients (no sign-in)
+
+> This path is for the `finalist-v2` build. The live site still runs the earlier build until it is redeployed
+> after the early review; locally: `make api`, `make web`, `make seed`. Every patient below is **SIMULATED**.
+
+The seed adds 13 hand-written stories (`api/loopcloser/synth/generator.py`, `DEMO_STORIES`) on top of 1,000
+generated patients. Each story is replayed through the same commands the app uses (`synth/stories.py`), so its
+timeline is real events, not pasted text. Type the case id into **Find a case** on Today, or open `/case?id=...`.
+
+1. **Lead story: C-DEMO-01, Nena Bautista, positive FIT.** Sign in as **Coordinator (demo)** and open C-DEMO-01.
+   The readable timeline shows the whole loop: result reviewed, first call missed on Day 2, automatic SMS
+   reminder on Day 4, the ladder's community health worker step and a home visit on Day 7, colonoscopy booked on
+   Day 8, visit completed on Day 11, closed on Day 12 by a coordinator with structured evidence (visit date,
+   facility, record number DH-26-0417). Press **See the patient's phone** for the SMS she received (`/phone`).
+2. **C-DEMO-02, red flag.** A patient reports a severe headache: automation stops, a human task opens, and
+   "Prepare for the call" is refused until a person resolves it.
+3. **C-DEMO-03, nobody owns it.** A new result with no owner. Press **Advance 1 day** (supervisor) and it
+   escalates instead of waiting silently.
+4. **C-DEMO-04, close blocked.** Visit completed, but **Close** stays off until a visit date, facility and record
+   number are entered; the API refuses a close without them too (rules CLOSE-1, CLOSE-3). The patient's name and
+   phone are hidden until you press **Show name and phone**, and that reveal is logged (rule PRIV-1).
+5. **C-DEMO-05, lost contact.** Three failed calls trigger escalation (rule ESC-1) and the "lost contact" count.
+6. Others to try: **C-DEMO-06** transport barrier, **C-DEMO-07** no-show, **C-DEMO-08** declined and closed with
+   a sign-off, **C-DEMO-09** speaks Cebuano (needs a navigator, +1 priority), **C-DEMO-10** has no phone so the
+   SMS reminder is skipped, **C-DEMO-11** borderline result, **C-DEMO-12** critical and urgent, **C-DEMO-13**
+   32 days overdue and escalated.
+7. Then open **Today** (summary sentence, My cases, screening filter), **Dashboard** (program view) and
+   **Import** (CSV check before anything is saved).
+
+Screenshots of this path: [docs/screenshots/v2/](docs/screenshots/v2/).
 
 ## The problem
 
@@ -79,6 +95,9 @@ LoopCloser is a care-continuity and safety system, **not a diagnostic AI**.
 
 > All pathways are **pending clinical sign-off**: the team has no clinician yet. Deadlines are configurable
 > defaults pending clinical review.
+> Review template for a clinician (blood pressure and cervical pathways, 5 questions):
+> [docs/clinical-review.md](docs/clinical-review.md); printable sheet:
+> [submission/clinician-review-questions.md](submission/clinician-review-questions.md). Not filled in yet.
 
 ## Measured, not estimated
 
@@ -114,9 +133,95 @@ processed outside Singapore; they contain only masked, fictional case facts.
 
 ## Cost and spend limits
 - Expected cost at demo traffic: about US$0 to 2 per month (see [docs/gcp-project.md](docs/gcp-project.md)).
+  Per-facility pilot math is in [Pilot and cost](#pilot-and-cost).
 - Cloud Run max 1 instance caps compute. A US$5/month budget alert emails at 50%, 90% and 100%.
 - A budget alert does **not** stop spending by itself; the instance cap and Firestore's free daily quota are what
   keep a demo cheap.
+
+## Built during the challenge
+
+Dates are from `git log` (Manila time). The repo history starts on 2026-10-17.
+
+| Date | Commit | What |
+|---|---|---|
+| 2026-10-17 | `1c1e6e6` | Week 1: event-sourced case model, versioned pathways, synthetic data, auth and roles, Firestore rules, CI (90 files) |
+| 2026-10-17 | `f82728f` | Own Google Cloud project, guard against the InvoiceSentinel project id |
+| 2026-10-18 | `4f7c7fe` | Week 2: demo mode, priority engine, Today view, case action panel, bilingual templates, escalation ladder |
+| 2026-10-18 | `65bfdf6` to `73e8828` | First deploy, fast ladder, Today queries by lane, demo reset tool |
+| 2026-11-09 | `e24546c` | README for judges with cited statistics, safety line in the UI, labeled synthetic eval (EVAL.md) |
+| 2026-11-09 | `0ea2942` | "Prepare for the call" AI draft on Vertex AI, with fact check and Use/Discard events |
+| 2026-11-14 | `d908191` | Ladder on/off targets written down before the comparison was run |
+| 2026-11-14 | `d565959`, `7685407` | 13 scripted demo stories, plain statuses, structured closure evidence, logged contact reveal, Today summary and search, dashboard, CSV import screen, patient phone page |
+
+**Reused from InvoiceSentinel (the team's earlier project):** the stack and the deployment pattern: Next.js static
+export on Firebase Hosting, FastAPI on Cloud Run at min 0, Firestore, Gemini, Secret Manager, a budget alert, and
+the habit of keeping each project in its own Google Cloud project. **New for this challenge:** everything specific
+to screening follow-up: the case state machine and event log, pathways, guard rules, priority points, escalation
+ladder, templates, synthetic cohort, eval, and all screens. The first commit added 90 files at once, so git
+history alone cannot show which files, if any, were adapted from earlier code.
+
+> ⚠️ PLACEHOLDER, Manuel to confirm: which files (if any) were adapted from InvoiceSentinel, for example the
+> Dockerfile, deploy scripts or auth middleware. Only list what is true.
+
+## Why queues and escalation
+
+> ⚠️ PLACEHOLDER, Manuel to write in his own words: how his background in collections (working overdue accounts:
+> owner per account, next action and date, contact attempts logged, escalation when nobody acts) shaped
+> LoopCloser's Today queue and escalation ladder. Do not add details he has not confirmed.
+
+## Beyond the Philippines
+
+The Philippine setup is configuration, not code. **Pathways** are versioned JSON files
+(`api/loopcloser/pathways/data/<id>@<version>.json`: trigger, next action, default deadline, red-flag route,
+sources); a new country's pathway is a new file plus a `LOCK.json` entry, and published versions cannot change.
+The **escalation ladder** days and steps come from the `LADDER_JSON` environment variable. **Patient messages**
+are JSON templates with one text per language, and the clinic phone number is a setting (`CLINIC_PHONE`).
+Honest limits: today only English and Filipino template texts exist, and the list of supported languages is a
+constant in `imports/csv_validation.py`, so adding a language means adding translations (reviewed by native
+speakers) and one line of code. Nothing has been tested outside the Philippines.
+
+## Pilot and cost
+
+**Proposal, not an agreement:** a 90-day pilot at one rural health unit (RHU), run by its nurse or coordinator,
+with real patients only after clinical sign-off of the pathways and templates. No RHU has agreed to this yet.
+Who could pay after a pilot, as **options only**: the LGU or RHU operating budget, or PhilHealth (no discussion
+has taken place with either).
+
+**Cost per facility per month** at Google Cloud list prices for asia-southeast1 (Singapore), fetched 2026-11-14
+from the official [Cloud Run](https://cloud.google.com/run/pricing) and
+[Firestore](https://cloud.google.com/firestore/pricing) pricing pages, before free tiers. Measured inputs from
+[EVAL.md](EVAL.md): 14 Firestore writes and about 35 reads per patient lifecycle; about US$0.001 and about 4 s
+per Gemini draft. Everything else below is a **planning assumption**, not data.
+
+| Price used | Value |
+|---|---|
+| Cloud Run, request-based billing, Tier 2 (asia-southeast1): CPU / memory while serving | US$0.0000336 per vCPU-second / US$0.0000035 per GiB-second |
+| Cloud Run requests | US$0.40 per million |
+| Firestore (asia-southeast1): reads / writes / storage | US$0.0369 / US$0.1107 per 100,000 documents; US$0.1846 per GiB-month |
+
+| Assumption (per facility, per month) | Value |
+|---|---|
+| Abnormal results entering follow-up | 100 or 300 (illustrative) |
+| Writes per patient | 20 (14 measured, plus 6 for ladder steps and escalations) |
+| Reads per patient | 35 (measured) plus 6 case-page views of about 16 documents each |
+| Staff Today-view loads | 3 staff x 30 loads x 22 working days = 1,980 loads, about 70 reads each (60 cards plus counts) |
+| Gemini drafts | 2 per patient |
+| Cloud Run billed time | 0.3 s per request, plus 4 s per draft, plus 2 cold starts of 10 s per working day; 1 vCPU, 512 MiB; about 15 requests per patient |
+
+| | 100 results/month | 300 results/month |
+|---|---|---|
+| Firestore: 2,000 writes and 151,700 reads / 6,000 writes and 177,900 reads | US$0.06 | US$0.07 |
+| Gemini: 200 / 600 drafts x US$0.001 | US$0.20 | US$0.60 |
+| Cloud Run at min 0: 2,284 s / 4,784 s billed, x (US$0.0000336 + 0.5 x US$0.0000035), plus requests | US$0.08 | US$0.17 |
+| **Total, list price** | **about US$0.34** | **about US$0.85** |
+
+At these volumes Firestore stays far inside its free daily quota (about 8,000 reads and 270 writes per working
+day against 50,000 and 20,000), and Cloud Run inside its free monthly allowance, so the real bill for one facility
+is mostly the Gemini drafts. **Not included:** real SMS (sending is simulated; no SMS provider is chosen yet, and
+SMS would likely cost more than everything above), staff time, devices and data plans, a Cloud Scheduler job for
+the daily ladder run, and support. **Option with no cold start:** keeping one instance warm (min 1) costs about
+US$0.45 per day at the idle rate (US$0.0000035 per vCPU-second and per GiB-second: 86,400 x 1 x 0.0000035 +
+86,400 x 0.5 x 0.0000035 = US$0.4536), about US$13.61 per 30 days, shared by every facility on the deployment.
 
 ## Architecture
 
@@ -194,7 +299,17 @@ project setup, billing and cost.
   health worker, Day 10 supervisor (case escalates), Day 14 unresolved review (`domain/ladder.py`, rule LAD-1).
   In demo mode a supervisor can advance a simulated clock to watch it run.
 
-Screenshots of the live demo: `docs/screenshots/live/` (05 shows a verified "Prepare for the call" draft). Deploy plan: `docs/deploy-plan.md`.
+- **Plain statuses and a Today summary (finalist-v2).** Every case shows one of four plain statuses (to contact,
+  booked, needs review, done) and "N days overdue". Today opens with one sentence ("377 to contact. 93 overdue...")
+  and has My cases, a screening filter and find-by-case-id. Name search is deliberately not offered.
+- **Structured closure evidence (rule CLOSE-3).** Closing with evidence needs a visit date (not in the future,
+  not before the case opened), the facility and a record number in a fixed format.
+- **Logged contact reveal (rule PRIV-1).** Names and phone numbers are hidden by default; pressing Show name and phone
+  logs who saw which fields (never the values).
+- **Program dashboard** (`/dashboard`), **CSV import check** (`/import`) and the **patient's phone** (`/phone`,
+  the simulated SMS a patient received).
+
+Screenshots: `docs/screenshots/v2/` (finalist-v2 build, local) and `docs/screenshots/live/` (live demo; 05 shows a verified "Prepare for the call" draft). Deploy plan: `docs/deploy-plan.md`.
 
 ## Run locally
 
@@ -269,10 +384,10 @@ no real SMS or patient data, no auto-closure, no claims of improved outcomes.
 ## Repo layout
 ```
 api/            FastAPI app (loopcloser/), tests/, Dockerfile, scripts/set_role.py
-web/            Next.js static app (Today view, case timeline, pathways, status)
+web/            Next.js static app (Today, case, dashboard, import, phone, pathways, status)
 firestore-tests/ security rules tests (emulator)
 firestore.rules, firestore.indexes.json, firebase.json
 deploy/         project.env, project setup + deploy scripts (dry run by default), Cloud Run service
-docs/           guard rules, backup plan, simulation assumptions, deploy and approval plans
+docs/           guard rules, clinical review template, backup plan, simulation assumptions, deploy and approval plans
 eval/           labeled synthetic scenarios and the evaluation runner
 ```

@@ -30,32 +30,75 @@
     },
     "latency_ms": {
       "requests": 165,
-      "p50": 4.51,
-      "p95": 5.75,
-      "max": 19.01
+      "p50": 4.04,
+      "p95": 5.2,
+      "max": 10.69
     },
     "failures": [],
     "lifecycle_firestore_ops": {
       "writes": 14,
       "reads_approx": 35
     },
-    "live": {
-      "first_ready_ms": 664.3,
-      "health": {
-        "n": 5,
-        "p50": 320.5,
-        "p95": 336.1
+    "ladder_compare": {
+      "cohort": {
+        "n": 1000,
+        "seed": 42,
+        "data_label": "SIMULATED"
       },
-      "today_supervisor": {
-        "n": 5,
-        "p50": 960.6,
-        "p95": 4025.5
+      "ladder_off": {
+        "seeded": 1018,
+        "day": 14,
+        "as_of": "2026-11-28",
+        "open": 1016,
+        "unowned": 177,
+        "unaccountable": 177,
+        "overdue": 355,
+        "silently_overdue": 128,
+        "reachable_open": 892,
+        "reachable_contacted": 624,
+        "red_flag_cases": 2,
+        "red_flag_touched_by_automation": 0,
+        "escalated_queue": 1,
+        "lane_counts": {
+          "needs_action": 250,
+          "overdue": 355,
+          "waiting": 410,
+          "completed": 1
+        }
       },
-      "case_detail": {
-        "n": 5,
-        "p50": 351.8,
-        "p95": 614.9
-      }
+      "ladder_on": {
+        "seeded": 1018,
+        "day": 14,
+        "as_of": "2026-11-28",
+        "open": 1016,
+        "unowned": 177,
+        "unaccountable": 0,
+        "overdue": 355,
+        "silently_overdue": 0,
+        "reachable_open": 892,
+        "reachable_contacted": 625,
+        "red_flag_cases": 2,
+        "red_flag_touched_by_automation": 0,
+        "escalated_queue": 379,
+        "lane_counts": {
+          "needs_action": 251,
+          "overdue": 355,
+          "waiting": 409,
+          "completed": 1
+        }
+      },
+      "reachable_contacted_share_on": 0.701,
+      "targets_met": {
+        "T1_unaccountable_on_is_0": true,
+        "T2_silently_overdue_on_is_0": true,
+        "T3_unowned_equal": true,
+        "T4_overdue_equal": true,
+        "T5_reachable_contacted_on_at_least_90pct": false,
+        "T6_red_flag_untouched_on": true
+      },
+      "misses": [
+        "T5_reachable_contacted_on_at_least_90pct"
+      ]
     }
   },
   "results": [
