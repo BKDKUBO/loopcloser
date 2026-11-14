@@ -50,12 +50,36 @@ class CaseRepository(Protocol):
 
     # Query by the stored idx_* fields. person = owner or backup owner; patient = patient_uid.
     def query(
-        self, *, lane: str | None = None, person: str | None = None, patient: str | None = None, limit: int = 50
+        self,
+        *,
+        lane: str | None = None,
+        person: str | None = None,
+        patient: str | None = None,
+        screening_type: str | None = None,
+        limit: int = 50,
     ) -> list[CaseView]: ...
 
     def count(
-        self, *, lane: str | None = None, tier: str | None = None, person: str | None = None, patient: str | None = None
+        self,
+        *,
+        lane: str | None = None,
+        tier: str | None = None,
+        person: str | None = None,
+        patient: str | None = None,
+        screening_type: str | None = None,
+        status: str | None = None,
+        lost: bool | None = None,
     ) -> int: ...
+
+    def search_ids(self, prefix: str, limit: int = 20) -> list[str]:
+        """Case ids starting with prefix (case-sensitive in Firestore; ids are upper case)."""
+        ...
+
+    # SIMULATED contact details (fictional name and phone) kept apart from the case projection, which
+    # staff clients can read. Server-only; every reveal is logged as an event on the case.
+    def put_contacts(self, contacts: dict[str, dict[str, str]]) -> None: ...
+
+    def get_contact(self, participant_id: str) -> dict[str, str] | None: ...
 
     def ladder_due(self, today_iso: str) -> list[CaseView]: ...
 

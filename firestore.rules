@@ -43,6 +43,9 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // SIMULATED names and phones (contacts/{participantId}) and meta/* are server-only: the API reveals a
+    // contact on a staff click and logs it as an event. No client rule, so the deny below applies.
+
     // Deny everything else.
     match /{document=**} {
       allow read, write: if false;

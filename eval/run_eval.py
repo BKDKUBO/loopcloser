@@ -1,6 +1,7 @@
 """Run the labeled SYNTHETIC evaluation set against the current LoopCloser backend.
 
   cd api && .venv/bin/python ../eval/run_eval.py              # local, in-memory store, full HTTP stack
+                                                                # plus the ladder on vs off comparison
   cd api && .venv/bin/python ../eval/run_eval.py --live-latency https://loopcloser-bkdkubo.web.app
 
 Local mode opens fictional cases through the real FastAPI app (TestClient, demo role headers, memory store)
@@ -221,6 +222,105 @@ def run_local(data: dict) -> dict:
     return {"today": today.isoformat(), "results": results, "timings_ms": timings, "lifecycle": lifecycle}
 
 
+LADDER_OFF = '[{"day": 0, "id": "upload", "label": "Result uploaded, case opened"}]'
+COMPARE_DAYS = 14
+
+
+def _arm(ladder_json: str | None, n: int, seed: int) -> dict:
+    """Seed the demo cohort into a fresh in-memory store, advance the demo clock one day at a time for
+    COMPARE_DAYS days with no staff or patient actions, and measure the open cases on the last day."""
+    from fastapi.testclient import TestClient
+
+    from loopcloser.config import load_config
+    from loopcloser.domain import indexing as idx
+    from loopcloser.domain.events import EventType
+    from loopcloser.domain.states import CaseState as S
+    from loopcloser.main import create_app
+    from loopcloser.store.memory import MemoryRepository
+
+    env = {"DEMO_MODE": "true", "RATE_LIMIT_PER_MINUTE": "100000", "RATE_LIMIT_SENSITIVE_PER_MINUTE": "100000"}
+    os.environ.update(env)
+    if ladder_json:
+        os.environ["LADDER_JSON"] = ladder_json
+    else:
+        os.environ.pop("LADDER_JSON", None)
+    try:
+        repo = MemoryRepository()
+        client = TestClient(create_app(load_config(), repo))
+        seeded = client.post("/api/demo/seed", headers=headers("supervisor"), json={"n": n, "seed": seed}).json()
+        for _ in range(COMPARE_DAYS):
+            r = client.post("/api/demo/clock", headers=headers("supervisor"), json={"advance_days": 1})
+            assert r.status_code == 200, r.text
+        today = date.fromisoformat(client.get("/api/clock", headers=headers("supervisor")).json()["today"])
+    finally:
+        os.environ.pop("LADDER_JSON", None)
+    cases = repo.list_cases()
+    open_ = [v for v in cases if v.state != S.CLOSED]
+    booked = {S.ACTION_SCHEDULED, S.VISIT_COMPLETED}
+    overdue = [v for v in open_ if v.state != S.VISIT_COMPLETED and v.due_date and v.due_date < today]
+    events = repo.load_events_many([v.id for v in cases])
+    red_flag_ids = {v.id for v in cases if v.automation_paused or v.red_flag_open}
+
+    def touched_by_automation_after_flag(cid: str) -> bool:
+        flagged = False
+        for e in events[cid]:
+            if e.type == EventType.RED_FLAG_REPORTED:
+                flagged = True
+            elif flagged and e.actor.kind == "automation":
+                return True
+            elif flagged and e.type == EventType.LADDER_STEP:
+                return True
+        return False
+
+    def contacted(cid: str) -> bool:
+        return any(
+            e.type == EventType.CONTACT_ATTEMPT
+            or (e.type == EventType.NOTIFICATION_STATUS and e.payload.get("status") == "sent")
+            for e in events[cid]
+        )
+
+    reachable = [v for v in open_ if v.phone_valid and not v.automation_paused]
+    return {
+        "seeded": seeded.get("opened", 0) + seeded.get("stories", 0),
+        "day": COMPARE_DAYS,
+        "as_of": today.isoformat(),
+        "open": len(open_),
+        "unowned": sum(1 for v in open_ if not v.owner),
+        "unaccountable": sum(1 for v in open_ if not v.owner and v.state != S.ESCALATED),
+        "overdue": len(overdue),
+        "silently_overdue": sum(
+            1 for v in overdue if v.state not in booked and v.state != S.ESCALATED and not v.automation_paused
+        ),
+        "reachable_open": len(reachable),
+        "reachable_contacted": sum(1 for v in reachable if contacted(v.id)),
+        "red_flag_cases": len(red_flag_ids),
+        "red_flag_touched_by_automation": sum(1 for c in red_flag_ids if touched_by_automation_after_flag(c)),
+        "escalated_queue": sum(1 for v in open_ if v.state == S.ESCALATED),
+        "lane_counts": {lane: sum(1 for v in open_ if idx.lane_for(v, today) == lane) for lane in idx.LANES},
+    }
+
+
+def ladder_compare(n: int = 1000, seed: int = 42) -> dict:
+    off, on = _arm(LADDER_OFF, n, seed), _arm(None, n, seed)
+    pct_on = on["reachable_contacted"] / on["reachable_open"] if on["reachable_open"] else 0.0
+    targets = {
+        "T1_unaccountable_on_is_0": on["unaccountable"] == 0,
+        "T2_silently_overdue_on_is_0": on["silently_overdue"] == 0,
+        "T3_unowned_equal": on["unowned"] == off["unowned"],
+        "T4_overdue_equal": on["overdue"] == off["overdue"],
+        "T5_reachable_contacted_on_at_least_90pct": pct_on >= 0.9,
+        "T6_red_flag_untouched_on": on["red_flag_touched_by_automation"] == 0,
+    }
+    return {
+        "cohort": {"n": n, "seed": seed, "data_label": "SIMULATED"},
+        "ladder_off": off,
+        "ladder_on": on,
+        "reachable_contacted_share_on": round(pct_on, 3),
+        "targets_met": targets,
+        "misses": [k for k, ok in targets.items() if not ok],
+    }
+
+
 def summarize(local: dict) -> dict:
     out = {}
     for cat in ("routing", "priority", "guard", "escalation"):
@@ -279,11 +379,15 @@ def main() -> int:
     ap.add_argument("--live-latency", metavar="BASE_URL")
     ap.add_argument("-n", type=int, default=5)
     ap.add_argument("--json", metavar="PATH", help="write full results here")
+    ap.add_argument("--no-ladder-compare", action="store_true", help="skip the ladder on vs off comparison")
     a = ap.parse_args()
     data = json.loads((HERE / "scenarios.json").read_text("utf-8"))
     local = run_local(data)
     summary = summarize(local)
     summary["lifecycle_firestore_ops"] = {"writes": local["lifecycle"][0], "reads_approx": local["lifecycle"][1]}
+    if not a.no_ladder_compare:
+        # Reported, not part of the exit code: misses are listed in EVAL.md.
+        summary["ladder_compare"] = ladder_compare()
     if a.live_latency:
         summary["live"] = live_latency(a.live_latency, a.n)
     print(json.dumps(summary, indent=2))

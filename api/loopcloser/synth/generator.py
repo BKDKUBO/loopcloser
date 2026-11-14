@@ -262,6 +262,306 @@ def _edge_cases(rows: list[dict], anchor: date) -> list[dict]:
     ]
 
 
+# ---------------------------------------------------------------- scripted demo stories
+#
+# 13 hand-written SIMULATED cases with fictional names, so the demo can follow one patient at a time.
+# Each story has a "proves" line used in the README demo path. Days are counted from the day the
+# result was uploaded (Day 0). The player (synth/stories.py) replays every step through the real
+# domain commands, runs the escalation ladder for each simulated day, and back-dates the events, so
+# the timeline looks exactly like a case that lived through those days. Names and phone numbers are
+# invented; phones use the fake +63 9000 range that the demo never sends to.
+#
+# Step forms: (day, "review", actor) · (day, "call", actor, result) · (day, "visit", actor, result)
+# (a community health worker home visit) · (day, "notified", actor, note) · (day, "understood", actor)
+# · (day, "book", actor, appointment_day, clinic) · (day, "message", actor, template_id)
+# · (day, "visit_done", actor) · (day, "no_show", actor) · (day, "declined", actor, reason)
+# · (day, "barrier", actor, barrier) · (day, "red_flag", actor, code)
+# · (day, "close", actor, reason, evidence | None) · (day, "ladder",) runs the ladder at that point
+# of the day (otherwise it runs after the day's steps).
+# Actors: worker = demo-worker-01, chw = demo-worker-02 (community health worker),
+# coord = demo-coord-01, sup = demo-sup-01.
+
+STORY_PHONE = "+63900010{n:04d}"
+
+DEMO_STORIES: list[dict] = [
+    {
+        "n": 1,
+        "name": "Nena Bautista",
+        "lead": True,
+        "proves": "The whole loop: positive FIT, missed call, automatic SMS reminder, community health worker "
+        "visit on Day 7, booking, colonoscopy, closure with structured evidence.",
+        "screening_type": "fit",
+        "result": "positive",
+        "severity": "abnormal",
+        "language": "fil",
+        "age_band": "50-59",
+        "location": "Site A",
+        "owner": "demo-worker-01",
+        "screened_days_ago": 15,
+        "opened_days_ago": 14,
+        "steps": [
+            (1, "review", "coord"),
+            (2, "call", "worker", "no_answer"),
+            (7, "ladder"),
+            (7, "visit", "chw", "reached"),
+            (7, "notified", "chw", "Home visit by the community health worker. Result explained in Filipino."),
+            (7, "understood", "chw"),
+            (8, "book", "coord", 11, "District hospital endoscopy unit (fictional)"),
+            (8, "message", "coord", "booking-confirmation"),
+            (11, "visit_done", "worker"),
+            (
+                12,
+                "close",
+                "coord",
+                "Colonoscopy done; result filed by the hospital",
+                {"visit_day": 11, "facility": "District hospital endoscopy unit (fictional)", "record": "DH-26-0417"},
+            ),
+        ],
+    },
+    {
+        "n": 2,
+        "name": "Ramon Villanueva",
+        "proves": "Red flag: the patient reports a severe headache during follow-up. Automation stops at once, a "
+        "human task opens, and AI drafts are refused.",
+        "screening_type": "bp",
+        "result": "elevated",
+        "severity": "abnormal",
+        "language": "fil",
+        "age_band": "60-69",
+        "location": "Site B",
+        "owner": "demo-coord-01",
+        "comorbidity": True,
+        "screened_days_ago": 4,
+        "opened_days_ago": 3,
+        "steps": [
+            (1, "review", "coord"),
+            (2, "call", "coord", "reached"),
+            (2, "notified", "coord", "Explained the reading; repeat measurement needed."),
+            (3, "red_flag", "worker", "severe_headache"),
+        ],
+    },
+    {
+        "n": 3,
+        "name": "Teresita Gomez",
+        "proves": "Unowned result: nobody was assigned. The ladder logs each missed step, and on Day 10 (press "
+        "Advance 1 day) it escalates the case to the supervisor.",
+        "screening_type": "cervical",
+        "result": "abnormal",
+        "severity": "abnormal",
+        "language": "en",
+        "age_band": "30-39",
+        "location": "Site C",
+        "owner": "",
+        "screened_days_ago": 10,
+        "opened_days_ago": 9,
+        "steps": [],
+    },
+    {
+        "n": 4,
+        "name": "Jun Mercado",
+        "proves": "Blocked close: the visit is done, but the case cannot be closed without a visit date, facility "
+        "and record number (rules CLOSE-1 and CLOSE-3), in the UI and in the API.",
+        "screening_type": "bp",
+        "result": "elevated",
+        "severity": "abnormal",
+        "language": "en",
+        "age_band": "40-49",
+        "location": "Site A",
+        "owner": "demo-worker-01",
+        "screened_days_ago": 7,
+        "opened_days_ago": 6,
+        "steps": [
+            (1, "review", "coord"),
+            (1, "call", "worker", "reached"),
+            (1, "notified", "worker", "Explained the reading by phone."),
+            (1, "understood", "worker"),
+            (2, "book", "coord", 5, "Site A rural health unit (fictional)"),
+            (5, "visit_done", "worker"),
+        ],
+    },
+    {
+        "n": 5,
+        "name": "Lorna Castillo",
+        "proves": "Lost contact: three failed calls escalate the case automatically (rule ESC-1).",
+        "screening_type": "cervical",
+        "result": "abnormal",
+        "severity": "abnormal",
+        "language": "fil",
+        "age_band": "40-49",
+        "location": "Site D",
+        "owner": "demo-worker-01",
+        "screened_days_ago": 7,
+        "opened_days_ago": 6,
+        "steps": [
+            (1, "review", "coord"),
+            (2, "call", "worker", "no_answer"),
+            (3, "call", "worker", "busy"),
+            (5, "call", "worker", "no_answer"),
+        ],
+    },
+    {
+        "n": 6,
+        "name": "Efren Aquino",
+        "proves": "Barrier: booked for colonoscopy but has no transport. The barrier raises priority and must be "
+        "resolved with a note.",
+        "screening_type": "fit",
+        "result": "positive",
+        "severity": "abnormal",
+        "language": "fil",
+        "age_band": "60-69",
+        "location": "Site E",
+        "owner": "demo-worker-01",
+        "screened_days_ago": 6,
+        "opened_days_ago": 5,
+        "steps": [
+            (1, "review", "coord"),
+            (2, "call", "worker", "reached"),
+            (2, "notified", "worker", "Result explained by phone."),
+            (2, "understood", "worker"),
+            (3, "book", "coord", 12, "Provincial hospital (fictional)"),
+            (4, "barrier", "worker", "transport"),
+        ],
+    },
+    {
+        "n": 7,
+        "name": "Celia Navarro",
+        "proves": "Missed appointment: a no-show goes back to the top of the queue to rebook.",
+        "screening_type": "bp",
+        "result": "elevated",
+        "severity": "abnormal",
+        "language": "en",
+        "age_band": "50-59",
+        "location": "Site B",
+        "owner": "demo-worker-02",
+        "screened_days_ago": 9,
+        "opened_days_ago": 8,
+        "steps": [
+            (1, "review", "coord"),
+            (2, "call", "worker", "reached"),
+            (2, "notified", "worker", "Repeat BP needed."),
+            (2, "understood", "worker"),
+            (3, "book", "coord", 6, "Site B rural health unit (fictional)"),
+            (6, "no_show", "worker"),
+        ],
+    },
+    {
+        "n": 8,
+        "name": "Danilo Ramos",
+        "proves": "Declined care is recorded, not hidden: closed with a coordinator sign-off and a reason.",
+        "screening_type": "generic",
+        "result": "abnormal",
+        "severity": "abnormal",
+        "language": "en",
+        "age_band": "30-39",
+        "location": "Site C",
+        "owner": "demo-coord-01",
+        "screened_days_ago": 11,
+        "opened_days_ago": 10,
+        "steps": [
+            (1, "review", "coord"),
+            (2, "call", "coord", "reached"),
+            (2, "notified", "coord", "Explained the result and the next step."),
+            (3, "declined", "coord", "Will see a private doctor instead"),
+            (4, "close", "coord", "Declined after counselling; will see a private doctor", None),
+        ],
+    },
+    {
+        "n": 9,
+        "name": "Gloria Pascual",
+        "proves": "Language: speaks Cebuano, which has no approved template yet, so the case gets +1 priority "
+        "and needs a navigator.",
+        "screening_type": "cervical",
+        "result": "abnormal",
+        "severity": "abnormal",
+        "language": "ceb",
+        "age_band": "30-39",
+        "location": "Site D",
+        "owner": "demo-worker-02",
+        "screened_days_ago": 3,
+        "opened_days_ago": 2,
+        "steps": [(1, "review", "coord")],
+    },
+    {
+        "n": 10,
+        "name": "Arnel Soriano",
+        "phone": "",
+        "proves": "No valid phone: the Day 4 SMS reminder is skipped and the ladder asks for a community health "
+        "worker visit instead.",
+        "screening_type": "fit",
+        "result": "positive",
+        "severity": "abnormal",
+        "language": "fil",
+        "age_band": "60-69",
+        "location": "Site E",
+        "owner": "demo-worker-03",
+        "screened_days_ago": 6,
+        "opened_days_ago": 5,
+        "steps": [(1, "review", "coord")],
+    },
+    {
+        "n": 11,
+        "name": "Imelda Torres",
+        "proves": "Routine: a borderline reading, patient informed, waiting for the repeat check.",
+        "screening_type": "bp",
+        "result": "borderline",
+        "severity": "borderline",
+        "language": "fil",
+        "age_band": "40-49",
+        "location": "Site A",
+        "owner": "demo-worker-01",
+        "screened_days_ago": 4,
+        "opened_days_ago": 3,
+        "steps": [
+            (1, "review", "coord"),
+            (1, "message", "worker", "result-notice"),
+            (2, "call", "worker", "reached"),
+            (2, "notified", "worker", "Borderline reading explained."),
+        ],
+    },
+    {
+        "n": 12,
+        "name": "Rogelio Fernandez",
+        "proves": "Critical result: marked urgent at upload, so it needs a named owner and sits at the top of "
+        "the queue.",
+        "screening_type": "bp",
+        "result": "elevated",
+        "severity": "critical",
+        "language": "en",
+        "age_band": "70+",
+        "location": "Site B",
+        "owner": "demo-coord-01",
+        "screened_days_ago": 1,
+        "opened_days_ago": 0,
+        "steps": [],
+    },
+    {
+        "n": 13,
+        "name": "Marites Lopez",
+        "proves": "Overdue: the result reached the health unit late. It shows as 32 days overdue and the ladder "
+        "has escalated it.",
+        "screening_type": "fit",
+        "result": "positive",
+        "severity": "abnormal",
+        "language": "fil",
+        "age_band": "50-59",
+        "location": "Site C",
+        "owner": "demo-worker-03",
+        "screened_days_ago": 62,
+        "opened_days_ago": 12,
+        "steps": [(1, "review", "coord"), (3, "call", "worker", "no_answer")],
+    },
+]
+
+
+def story_ids(story: dict) -> tuple[str, str]:
+    """(case_id, participant_id) for a story."""
+    return f"C-DEMO-{story['n']:02d}", f"P-DEMO{story['n']:02d}"
+
+
+def story_phone(story: dict) -> str:
+    return story["phone"] if "phone" in story else STORY_PHONE.format(n=story["n"])
+
+
 def write(cohort: Cohort, out: Path) -> tuple[Path, Path]:
     out.mkdir(parents=True, exist_ok=True)
     csv_path = out / "synthetic_cohort_SIMULATED.csv"

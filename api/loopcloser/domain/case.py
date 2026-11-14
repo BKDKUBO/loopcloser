@@ -39,6 +39,7 @@ class CaseView(BaseModel):
     last_contact_attempt: datetime | None = None
     closure_reason: str | None = None
     closure_evidence: str | None = None
+    closure_evidence_detail: dict[str, Any] | None = None  # structured: visit_date, facility, record_number
     signed_off_by: str | None = None
     # Participant context used by priority rules (from the upload, never from AI)
     language: str = "en"
@@ -142,6 +143,7 @@ def _apply(view: CaseView | None, ev: Event) -> CaseView:
         v.state = CaseState.CLOSED
         v.closure_reason = p["closure_reason"]
         v.closure_evidence = p.get("evidence_ref")
+        v.closure_evidence_detail = p.get("evidence")
         v.signed_off_by = p.get("signed_off_by")
     elif ev.type == EventType.BARRIER_REPORTED:
         if p["barrier"] not in v.barriers_open:
@@ -163,7 +165,7 @@ def _apply(view: CaseView | None, ev: Event) -> CaseView:
     elif ev.type == EventType.LADDER_STEP:
         if p["step"] not in v.ladder_steps:
             v.ladder_steps.append(p["step"])
-    # NOTIFICATION_STATUS, NOTE_ADDED and the AI_DRAFT_* audit events never change state on their own.
+    # NOTIFICATION_STATUS, NOTE_ADDED, CONTACT_REVEALED and the AI_DRAFT_* audit events never change state.
     v.updated_at = ev.at
     v.version = ev.seq
     return v

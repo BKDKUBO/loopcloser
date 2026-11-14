@@ -29,7 +29,7 @@ from .domain import priority as prio
 from .domain.case import CaseView
 from .domain.errors import DomainError
 from .domain.events import SYSTEM_ACTOR, Actor
-from .domain.next_action import recommend
+from .domain.next_action import PLAIN_STATUSES, lost_contact, plain_status, recommend
 from .domain.roles import Perm, Role, has_perm
 from .domain.states import CaseState
 from .imports.csv_validation import validate_csv
@@ -38,10 +38,12 @@ from .pathways.library import PathwayLibrary, default_library
 from .ratelimit import SlidingWindowLimiter
 from .store.base import CaseRepository
 from .synth.generator import DISCLAIMER, LABEL, generate
+from .synth.stories import play_stories
 from .templates.library import TemplateError, default_templates
 
 log = logging.getLogger("loopcloser")
 SENSITIVE_PREFIXES = ("/api/imports", "/api/ai", "/api/demo", "/api/ladder")
+SCREENING_TYPES = frozenset({"fit", "bp", "cervical", "generic", "symptom"})
 MANILA = ZoneInfo("Asia/Manila")
 SEED_ACTOR = Actor(id="demo-seed-history", role=Role.COORDINATOR, kind="human")
 MAX_CSV_BYTES = 5 * 1024 * 1024
@@ -122,10 +124,21 @@ class ResumeIn(BaseModel):
     reason: str
 
 
+class EvidenceIn(BaseModel):
+    visit_date: str = Field(max_length=10)
+    facility: str = Field(max_length=120)
+    record_number: str = Field(max_length=40)
+
+
 class CloseIn(BaseModel):
-    closure_reason: str
-    evidence_ref: str | None = None
+    closure_reason: str = Field(max_length=500)
+    evidence: EvidenceIn | None = None
+    evidence_ref: str | None = Field(default=None, max_length=200)  # legacy reference id (e.g. an upload id)
     sign_off: bool = False
+
+
+class RevealIn(BaseModel):
+    fields: list[str] = Field(default_factory=lambda: ["name", "phone"])
 
 
 class NoteIn(BaseModel):
@@ -355,8 +368,13 @@ def create_app(
         if p.role.value != "patient":
             d["participant_id"] = mask_participant(v.participant_id)
         d.pop("patient_uid", None)
-        d["priority"] = prio.compute(v, today()).to_dict()
+        t = today()
+        d["priority"] = prio.compute(v, t).to_dict()
         d["recommended_action"] = recommend(v)
+        d["plain_status"] = plain_status(v)
+        d["plain_status_label"] = PLAIN_STATUSES[d["plain_status"]]
+        d["lost_contact"] = lost_contact(v)
+        d["days_to_due"] = (v.due_date - t).days if v.due_date else None
         if detail:
             d["ladder"] = ladder_mod.status(v, today(), steps)
             d["day"] = ladder_mod.day_of(v, today())
@@ -387,17 +405,31 @@ def create_app(
             return {"patient": p.uid}
         raise HTTPException(403, "Not allowed.")
 
-    def _tier_counts(scope: dict[str, str]) -> dict[str, int]:
+    def _tier_counts(scope: dict[str, Any]) -> dict[str, int]:
         return {t: repo.count(tier=t, **scope) for t in idx.TIERS}
+
+    def _filters(p: Principal, mine: bool, screening_type: str | None) -> dict[str, Any]:
+        """The role scope plus the optional "My cases" and screening-type filters."""
+        scope: dict[str, Any] = dict(_scope(p))
+        if mine and "patient" not in scope:
+            scope["person"] = p.uid
+        if screening_type:
+            if screening_type not in SCREENING_TYPES:
+                raise HTTPException(400, f"screening_type must be one of {', '.join(sorted(SCREENING_TYPES))}")
+            scope["screening_type"] = screening_type
+        return scope
 
     @app.get("/api/today")
     def today_view(
-        p: Principal = Depends(auth.current_user), per_lane: int = Query(15, ge=1, le=100)
+        p: Principal = Depends(auth.current_user),
+        per_lane: int = Query(15, ge=1, le=100),
+        mine: bool = False,
+        screening_type: str | None = None,
     ) -> dict[str, Any]:
         """Staff Today view: the top cases of each lane plus exact counts, without reading every case.
         Cost per load: per_lane documents per lane plus a few aggregation counts."""
         ensure_indexed()
-        scope = _scope(p)
+        scope = _filters(p, mine, screening_type)
         lanes = {}
         for lane in idx.LANES:
             rows = repo.query(lane=lane, limit=per_lane, **scope)
@@ -406,6 +438,13 @@ def create_app(
             "today": today().isoformat(),
             "total": sum(x["count"] for x in lanes.values()),
             "tier_counts": _tier_counts(scope),
+            "summary": {
+                "to_contact": repo.count(status="to_contact", **scope),
+                "overdue": lanes["overdue"]["count"],
+                "lost_contact": repo.count(lost=True, **scope),
+                "needs_review": repo.count(status="needs_review", **scope),
+            },
+            "filters": {"mine": mine, "screening_type": screening_type},
             "lanes": lanes,
         }
 
@@ -414,18 +453,103 @@ def create_app(
         p: Principal = Depends(auth.current_user),
         lane: str | None = None,
         limit: int = Query(50, ge=1, le=200),
+        mine: bool = False,
+        screening_type: str | None = None,
     ) -> dict[str, Any]:
         """Cases you can see, highest priority first, optionally one lane. Reads at most `limit` documents."""
         if lane is not None and lane not in idx.LANES:
             raise HTTPException(400, f"lane must be one of {', '.join(idx.LANES)}")
         ensure_indexed()
-        scope = _scope(p)
+        scope = _filters(p, mine, screening_type)
         rows = repo.query(lane=lane, limit=limit, **scope)
         return {
             "total": repo.count(lane=lane, **scope),
             "today": today().isoformat(),
             "tier_counts": _tier_counts(scope),
             "cases": [_out(v, p) for v in rows],
+        }
+
+    @app.get("/api/cases/search")
+    def search_cases(
+        q: str = Query(..., min_length=2, max_length=40), p: Principal = Depends(auth.current_user)
+    ) -> dict[str, Any]:
+        """Find cases by case id (prefix; "DEMO-01" also finds "C-DEMO-01"). Names are not searchable on
+        purpose: they stay hidden until a staff member reveals them, and every reveal is logged."""
+        if p.role.value == "patient":
+            raise HTTPException(403, "Not allowed.")
+        term = q.strip().upper()
+        ids: list[str] = []
+        for prefix in dict.fromkeys([term, term if term.startswith("C-") else f"C-{term}"]):
+            ids += [i for i in repo.search_ids(prefix, 20) if i not in ids]
+        found = [v for v in (repo.get_case(i) for i in ids[:20]) if v and _visible(v, p)]
+        return {"query": q, "cases": [_out(v, p) for v in found]}
+
+    @app.get("/api/dashboard")
+    def dashboard(p: Principal = Depends(require(Perm.DASHBOARD_READ))) -> dict[str, Any]:
+        """Program manager view. Every number is computed from the case projections, which are folds of the
+        event log, and from the log itself for the time to care. Reads every case: fine for a demo or one
+        health unit; a large program would keep these as running totals."""
+        t = today()
+        cases = repo.list_cases()
+        total = len(cases)
+        closed = [v for v in cases if v.state == CaseState.CLOSED]
+        open_ = [v for v in cases if v.state != CaseState.CLOSED]
+        overdue = [v for v in open_ if idx.lane_for(v, t) == "overdue"]
+        lost = [v for v in open_ if lost_contact(v)]
+        done_ids = [v.id for v in cases if v.state in {CaseState.VISIT_COMPLETED, CaseState.CLOSED}]
+        days: list[int] = []
+        for evs in repo.load_events_many(done_ids).values():
+            opened = next((e.at for e in evs if e.type.value == "case_opened"), None)
+            visit = next(
+                (
+                    e.at
+                    for e in evs
+                    if e.type.value == "state_changed" and e.payload.get("to") == CaseState.VISIT_COMPLETED.value
+                ),
+                None,
+            )
+            if opened and visit:
+                days.append((visit - opened).days)
+        days.sort()
+        median = None
+        if days:
+            mid = len(days) // 2
+            median = days[mid] if len(days) % 2 else (days[mid - 1] + days[mid]) / 2
+        by_status = {k: 0 for k in PLAIN_STATUSES}
+        for v in cases:
+            by_status[plain_status(v)] += 1
+        by_type: dict[str, dict[str, int]] = {}
+        for v in cases:
+            row = by_type.setdefault(v.screening_type, {"total": 0, "closed": 0, "overdue": 0})
+            row["total"] += 1
+            row["closed"] += v.state == CaseState.CLOSED
+            row["overdue"] += v.state != CaseState.CLOSED and idx.lane_for(v, t) == "overdue"
+        return {
+            "today": t.isoformat(),
+            "total_cases": total,
+            "closed": len(closed),
+            "closure_rate": round(len(closed) / total, 3) if total else None,
+            "closed_with_evidence": sum(1 for v in closed if v.closure_evidence),
+            "closed_with_signoff": sum(1 for v in closed if v.signed_off_by and not v.closure_evidence),
+            "median_days_to_care": median,
+            "days_to_care_n": len(days),
+            "open": len(open_),
+            "overdue": len(overdue),
+            "lost_to_follow_up": len(lost),
+            "unowned_open": sum(1 for v in open_ if not v.owner),
+            "red_flags_open": sum(1 for v in open_ if v.red_flag_open),
+            "escalated_open": sum(1 for v in open_ if v.state == CaseState.ESCALATED),
+            "by_status": {PLAIN_STATUSES[k]: n for k, n in by_status.items()},
+            "by_screening_type": dict(sorted(by_type.items())),
+            "synthetic_share": round(sum(1 for v in cases if v.synthetic) / total, 3) if total else None,
+            "definitions": {
+                "closure_rate": "closed cases / all cases",
+                "median_days_to_care": "days from the case being opened to the visit being recorded, "
+                "over cases with a recorded visit",
+                "overdue": "open cases past their pathway deadline (visit not completed)",
+                "lost_to_follow_up": "open cases marked unable to reach, or with 3+ failed contact attempts and "
+                "no successful one",
+            },
         }
 
     @app.get("/api/cases/{case_id}")
@@ -500,7 +624,72 @@ def create_app(
     @app.post("/api/cases/{case_id}/close")
     def close(case_id: str, body: CloseIn, p: Principal = Depends(require(Perm.CASE_CLOSE))):
         _get_visible(case_id, p)
-        return _out(cmd.close_case(repo, case_id, actor=p.actor, now=now(), **body.model_dump()), p)
+        v = cmd.close_case(
+            repo,
+            case_id,
+            actor=p.actor,
+            closure_reason=body.closure_reason,
+            evidence=body.evidence.model_dump() if body.evidence else None,
+            evidence_ref=body.evidence_ref,
+            sign_off=body.sign_off,
+            now=now(),
+            today=today(),
+        )
+        return _out(v, p)
+
+    @app.post("/api/cases/{case_id}/reveal-contact")
+    def reveal_contact(case_id: str, body: RevealIn, p: Principal = Depends(require(Perm.CASE_CONTACT))):
+        """Show the fictional name and phone of a SIMULATED case. Logged as an event (rule PRIV-1): which
+        fields and who, never the values. Real imports keep no names or phones in this build."""
+        v = _get_visible(case_id, p)
+        contact = repo.get_contact(v.participant_id) if v.synthetic else None
+        if not contact:
+            raise HTTPException(404, "No contact details on file for this case.")
+        fields = tuple(dict.fromkeys(body.fields))
+        cmd.record_contact_reveal(repo, case_id, actor=p.actor, fields=fields, now=now())
+        return {
+            "case_id": case_id,
+            **{f: contact.get(f) or "" for f in fields},
+            "data_label": "SIMULATED",
+            "logged": True,
+        }
+
+    @app.get("/api/cases/{case_id}/outbox")
+    def outbox(case_id: str, p: Principal = Depends(auth.current_user)) -> dict[str, Any]:
+        """The simulated SMS this patient was sent, re-rendered from each logged template id, version and
+        language with the case record. Nothing is ever really sent."""
+        if p.role.value == "program_manager":
+            raise HTTPException(403, "Not allowed.")
+        v = _get_visible(case_id, p)
+        msgs = []
+        for e in repo.load_events(case_id):
+            if e.type.value != "notification_status" or e.payload.get("status") != "sent":
+                continue
+            tpl = templates.get(e.payload["template_id"], e.payload.get("template_version"))
+            lang = e.payload.get("language", "en")
+            text = None
+            if tpl is not None and lang in tpl.languages:
+                try:
+                    text = tpl.render(lang, _msg_ctx(v, None, None))["text"]
+                except TemplateError:
+                    text = None
+            msgs.append(
+                {
+                    "at": e.at.isoformat(),
+                    "template_id": e.payload["template_id"],
+                    "language": lang,
+                    "channel": e.payload.get("channel", "sms"),
+                    "by_automation": e.actor.kind != "human",
+                    "text": text,
+                }
+            )
+        return {
+            "case_id": case_id,
+            "participant_id": _out(v, p)["participant_id"],
+            "language": v.language,
+            "simulated": True,
+            "messages": msgs,
+        }
 
     @app.post("/api/cases/{case_id}/notes")
     def note(case_id: str, body: NoteIn, p: Principal = Depends(require(Perm.CASE_NOTE))):
@@ -542,18 +731,21 @@ def create_app(
     def list_templates(_: Principal = Depends(require(Perm.PATHWAY_READ))) -> list[dict]:
         return [t.model_dump() for t in templates.latest()]
 
-    def _render(v: CaseView, body: MessageIn) -> dict[str, Any]:
-        tpl = templates.get(body.template_id)
-        if tpl is None:
-            raise HTTPException(422, "Unknown template. Official messages must use an approved template.")
-        ctx = {
+    def _msg_ctx(v: CaseView, appointment_date: str | None, clinic: str | None) -> dict[str, Any]:
+        return {
             "screening_type": v.screening_type,
             "pathway_id": v.pathway_id,
             "due_date": v.due_date.isoformat() if v.due_date else "",
             "clinic_phone": cfg.clinic_phone,
-            "appointment_date": body.appointment_date or (v.appointment or {}).get("date"),
-            "clinic": body.clinic or (v.appointment or {}).get("clinic"),
+            "appointment_date": appointment_date or (v.appointment or {}).get("date"),
+            "clinic": clinic or (v.appointment or {}).get("clinic"),
         }
+
+    def _render(v: CaseView, body: MessageIn) -> dict[str, Any]:
+        tpl = templates.get(body.template_id)
+        if tpl is None:
+            raise HTTPException(422, "Unknown template. Official messages must use an approved template.")
+        ctx = _msg_ctx(v, body.appointment_date, body.clinic)
         try:
             return tpl.render(body.language, ctx)
         except TemplateError as exc:
@@ -773,7 +965,7 @@ def create_app(
         ][:500]
         return {"summary": rep.summary(), "issues_preview": preview, "error_csv": rep.error_csv()}
 
-    def _open_from_rows(rows: list[dict[str, str]], actor, synthetic: bool) -> dict[str, int]:
+    def _open_from_rows(rows: list[dict[str, str]], actor, synthetic: bool, stories: bool = False) -> dict[str, int]:
         # Build new cases in a scratch in-memory store (same domain commands and guards), then write them
         # in bulk. Seeding 1,000 cases one transaction at a time took minutes on Firestore.
         from .store.memory import MemoryRepository
@@ -818,9 +1010,30 @@ def create_app(
             if synthetic:
                 _simulate_history(stage, case_id, row)
             opened += 1
+        contacts: dict[str, dict[str, str]] = {}
+        if synthetic:  # fictional names and phones, server-only; real imports keep none in this build
+            contacts = {
+                r["participant_id"]: {
+                    "name": r.get("masked_name") or "",
+                    "phone": r.get("phone") or "",
+                    "data_label": LABEL,
+                }
+                for r in rows
+                if r.get("data_label") == LABEL
+            }
+        n_stories = 0
+        if stories:
+            before = len(stage.existing_ids())
+            contacts.update(play_stories(stage, lib, today=today(), now=now(), ladder=steps, skip=existing))
+            n_stories = len(stage.existing_ids()) - before
         staged = [(cid, stage.load_events(cid), stage.get_case(cid)) for cid in sorted(stage.existing_ids())]
         lost = repo.create_cases(staged)
-        return {"opened": opened - len(lost), "skipped": skipped + len(lost)}
+        if contacts:
+            repo.put_contacts(contacts)
+        out = {"opened": opened - len([c for c in lost if not c.startswith("C-DEMO-")]), "skipped": skipped + len(lost)}
+        if stories:
+            out["stories"] = n_stories - len([c for c in lost if c.startswith("C-DEMO-")])
+        return out
 
     def _simulate_history(repo: CaseRepository, case_id: str, row: dict[str, str]) -> None:
         """Walk SIMULATED cases forward to match their synthetic status, so the demo has variety."""
@@ -876,7 +1089,7 @@ def create_app(
         w.writeheader()
         w.writerows(cohort.rows)
         rep = validate_csv(buf.getvalue())
-        res = _open_from_rows(rep.valid_rows, SYSTEM_ACTOR, synthetic=True)
+        res = _open_from_rows(rep.valid_rows, SYSTEM_ACTOR, synthetic=True, stories=True)
         return {"data_label": LABEL, "disclaimer": DISCLAIMER, **res, "validation": rep.summary()}
 
     return app

@@ -19,6 +19,7 @@ class MemoryRepository:
         self._cases: dict[str, CaseView] = {}
         self._idx: dict[str, dict[str, Any]] = {}
         self._meta: dict[str, dict[str, Any]] = {}
+        self._contacts: dict[str, dict[str, str]] = {}  # SIMULATED names and phones, server-only
         self._lock = threading.Lock()
         self.indexer = indexer
         self.write_ops = 0  # for tests: documents written
@@ -81,7 +82,7 @@ class MemoryRepository:
                 skipped.append(case_id)
         return skipped
 
-    def _match(self, case_id: str, lane, tier, person, patient) -> bool:
+    def _match(self, case_id: str, lane, tier, person, patient, screening_type=None, status=None, lost=None) -> bool:
         ix = self._idx.get(case_id)
         if ix is None:
             return False
@@ -91,17 +92,37 @@ class MemoryRepository:
             and (tier is None or ix["idx_tier"] == tier)
             and (person is None or person in ix["idx_people"])
             and (patient is None or v.patient_uid == patient)
+            and (screening_type is None or v.screening_type == screening_type)
+            and (status is None or ix.get("idx_status") == status)
+            and (lost is None or ix.get("idx_lost") == lost)
         )
 
-    def query(self, *, lane=None, person=None, patient=None, limit: int = 50) -> list[CaseView]:
+    def query(self, *, lane=None, person=None, patient=None, screening_type=None, limit: int = 50) -> list[CaseView]:
         with self._lock:
-            ids = [c for c in self._cases if self._match(c, lane, None, person, patient)]
+            ids = [c for c in self._cases if self._match(c, lane, None, person, patient, screening_type)]
             ids.sort(key=lambda c: sort_key({**self._idx[c], "id": c}))
             return [self._cases[c].model_copy(deep=True) for c in ids[:limit]]
 
-    def count(self, *, lane=None, tier=None, person=None, patient=None) -> int:
+    def count(
+        self, *, lane=None, tier=None, person=None, patient=None, screening_type=None, status=None, lost=None
+    ) -> int:
         with self._lock:
-            return sum(1 for c in self._cases if self._match(c, lane, tier, person, patient))
+            return sum(
+                1 for c in self._cases if self._match(c, lane, tier, person, patient, screening_type, status, lost)
+            )
+
+    def search_ids(self, prefix: str, limit: int = 20) -> list[str]:
+        with self._lock:
+            return sorted(c for c in self._cases if c.upper().startswith(prefix.upper()))[:limit]
+
+    def put_contacts(self, contacts: dict[str, dict[str, str]]) -> None:
+        with self._lock:
+            self._contacts.update({k: dict(v) for k, v in contacts.items()})
+
+    def get_contact(self, participant_id: str) -> dict[str, str] | None:
+        with self._lock:
+            c = self._contacts.get(participant_id)
+            return dict(c) if c else None
 
     def ladder_due(self, today_iso: str) -> list[CaseView]:
         with self._lock:

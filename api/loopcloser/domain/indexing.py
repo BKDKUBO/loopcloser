@@ -10,6 +10,8 @@ case is written:
   idx_people      owner and backup owner, so a worker query is one array-contains filter
   idx_recheck     next date on which the tier or lane can change only because time passed
   idx_ladder_due  next date an escalation ladder step becomes due, far future when none can be
+  idx_status      plain status (to_contact, booked, needs_review, done), for the Today summary
+  idx_lost        true when the patient cannot be reached (next_action.lost_contact)
 
 `idx_recheck` and `idx_ladder_due` let the daily (or "advance the clock") job query only the cases that
 actually need work instead of scanning them all. These fields are a rebuildable cache, like the
@@ -24,6 +26,7 @@ from typing import Any
 from . import ladder as ladder_mod
 from . import priority as prio
 from .case import CaseView
+from .next_action import lost_contact, plain_status
 from .states import CaseState as S
 
 LANES = ("needs_action", "overdue", "waiting", "completed")
@@ -81,6 +84,8 @@ def index_fields(
         "idx_recheck": rc.isoformat() if rc else FAR,
         "idx_ladder_due": ld.isoformat() if ld else FAR,
         "idx_as_of": today.isoformat(),
+        "idx_status": plain_status(v),
+        "idx_lost": lost_contact(v),
     }
 
 

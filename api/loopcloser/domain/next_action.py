@@ -39,3 +39,36 @@ def recommend(v: CaseView) -> dict[str, Any]:
         return {"label": f"Resolve barrier: {', '.join(v.barriers_open)}", "kind": "barrier", "target": None}
     label, kind, target = _BY_STATE[v.state]
     return {"label": label, "kind": kind, "target": target.value if target else None}
+
+
+# Plain statuses for staff screens (the full state is still shown in the timeline).
+PLAIN_STATUSES: dict[str, str] = {
+    "to_contact": "To contact",
+    "booked": "Booked",
+    "needs_review": "Needs review",
+    "done": "Done",
+}
+_REVIEW = frozenset({S.ESCALATED, S.AWAITING_HUMAN_REVIEW}) | RED_FLAG_STATES
+_DONE = frozenset({S.VISIT_COMPLETED, S.CLOSED})
+LOST_AFTER_FAILED_CONTACTS = 3
+
+
+def plain_status(v: CaseView) -> str:
+    """One of four plain statuses. Deterministic, derived from the case state."""
+    if v.state in _DONE:
+        return "done"
+    if v.red_flag_open or v.state in _REVIEW:
+        return "needs_review"
+    if v.state == S.ACTION_SCHEDULED:
+        return "booked"
+    return "to_contact"
+
+
+def lost_contact(v: CaseView) -> bool:
+    """Open case where the patient cannot be reached: marked unable to reach, or 3+ failed contact
+    attempts with no successful one."""
+    if v.state in _DONE:
+        return False
+    return v.state == S.UNABLE_TO_REACH or (
+        v.failed_contact_attempts >= LOST_AFTER_FAILED_CONTACTS and v.reached_contacts == 0
+    )

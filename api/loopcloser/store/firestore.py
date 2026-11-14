@@ -4,6 +4,7 @@ Layout (the (default) database of LoopCloser's own project, which gets the free 
   cases/{caseId}                 projection (rebuildable cache, read by the web app) plus idx_* query fields
   cases/{caseId}/events/{seq}    append-only event log, the source of truth
   meta/{key}                     small server-only settings, e.g. the demo clock
+  contacts/{participantId}       SIMULATED fictional name and phone, server-only (rules deny clients)
 
 Appends use create(), which fails if the document exists, so an event can never be overwritten.
 Single appends run in a transaction that also checks the case version. Bulk appends (seeding, the
@@ -46,6 +47,7 @@ class FirestoreRepository:
         self.db = client or _db()
         self.cases = self.db.collection("cases")
         self.meta = self.db.collection("meta")
+        self.contacts = self.db.collection("contacts")
         self.indexer = indexer
 
     def _doc(self, projection: CaseView) -> dict[str, Any]:
@@ -172,10 +174,16 @@ class FirestoreRepository:
 
     # ------------------------------------------------------------ queries on idx_* fields
 
-    def _filtered(self, lane=None, tier=None, person=None, patient=None):
+    def _filtered(self, lane=None, tier=None, person=None, patient=None, screening_type=None, status=None, lost=None):
         from google.cloud.firestore_v1.base_query import FieldFilter
 
         q = self.cases
+        if screening_type is not None:
+            q = q.where(filter=FieldFilter("screening_type", "==", screening_type))
+        if status is not None:
+            q = q.where(filter=FieldFilter("idx_status", "==", status))
+        if lost is not None:
+            q = q.where(filter=FieldFilter("idx_lost", "==", lost))
         if patient is not None:
             q = q.where(filter=FieldFilter("patient_uid", "==", patient))
         if person is not None:
@@ -186,18 +194,54 @@ class FirestoreRepository:
             q = q.where(filter=FieldFilter("idx_tier", "==", tier))
         return q
 
-    def query(self, *, lane=None, person=None, patient=None, limit: int = 50) -> list[CaseView]:
-        q = self._filtered(lane=lane, person=person, patient=patient)
+    def query(self, *, lane=None, person=None, patient=None, screening_type=None, limit: int = 50) -> list[CaseView]:
+        q = self._filtered(lane=lane, person=person, patient=patient, screening_type=screening_type)
         if patient is None:  # a patient has one or two cases; no ordering index needed
             for field, direction in _IDX_ORDER:
                 q = q.order_by(field, direction=direction)
             q = q.order_by("__name__")
         return [CaseView.model_validate(d.to_dict()) for d in q.limit(limit).stream()]
 
-    def count(self, *, lane=None, tier=None, person=None, patient=None) -> int:
+    def count(
+        self, *, lane=None, tier=None, person=None, patient=None, screening_type=None, status=None, lost=None
+    ) -> int:
         """Aggregation count: billed as one read per 1,000 matching index entries, not per document."""
-        res = self._filtered(lane=lane, tier=tier, person=person, patient=patient).count().get()
+        q = self._filtered(
+            lane=lane,
+            tier=tier,
+            person=person,
+            patient=patient,
+            screening_type=screening_type,
+            status=status,
+            lost=lost,
+        )
+        res = q.count().get()
         return int(res[0][0].value)
+
+    def search_ids(self, prefix: str, limit: int = 20) -> list[str]:
+        from google.cloud.firestore_v1.base_query import FieldFilter
+
+        start = self.cases.document(prefix)
+        end = self.cases.document(prefix + "\uf8ff")
+        q = (
+            self.cases.where(filter=FieldFilter("__name__", ">=", start))
+            .where(filter=FieldFilter("__name__", "<=", end))
+            .select([])
+            .limit(limit)
+        )
+        return [d.id for d in q.stream()]
+
+    def put_contacts(self, contacts: dict[str, dict[str, str]]) -> None:
+        items = list(contacts.items())
+        for i in range(0, len(items), _BATCH_OPS):
+            batch = self.db.batch()
+            for pid, c in items[i : i + _BATCH_OPS]:
+                batch.set(self.contacts.document(pid), dict(c))
+            batch.commit()
+
+    def get_contact(self, participant_id: str) -> dict[str, str] | None:
+        snap = self.contacts.document(participant_id).get()
+        return snap.to_dict() if snap.exists else None
 
     def ladder_due(self, today_iso: str) -> list[CaseView]:
         from google.cloud.firestore_v1.base_query import FieldFilter

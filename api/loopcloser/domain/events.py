@@ -50,6 +50,8 @@ class EventType(StrEnum):
     # AI drafts for staff. Audit only: they never change case state (see case.py).
     AI_DRAFT_CREATED = "ai_draft_created"
     AI_DRAFT_DECISION = "ai_draft_decision"
+    # Staff looked at the (SIMULATED) name and phone. Audit only: never changes the case.
+    CONTACT_REVEALED = "contact_revealed"
 
 
 class Event(BaseModel):

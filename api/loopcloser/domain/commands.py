@@ -13,6 +13,10 @@ Guard rule ids (also listed in docs/guard-rules.md):
   ESC-1   Escalate after N failed contact attempts (configurable).
   CLOSE-1 Closing needs an authorized human, a closure reason, and evidence or sign-off.
   CLOSE-2 Only coordinator or supervisor can close or sign off.
+  CLOSE-3 Structured closure evidence needs a visit date (not in the future, not before the case opened),
+          a facility, and a record number.
+  PRIV-1  Names and phone numbers are hidden on staff screens. Revealing them is a click by a human staff
+          member and is logged as an event (which fields, never the values).
   MSG-3   Official patient messages must use an approved template (id, version, language). No free text, no AI text.
   PRI-1   Only a supervisor overrides priority, with a reason code and a note.
   PRI-2   Priority cannot be lowered below Urgent while a red flag is open.
@@ -26,6 +30,7 @@ Guard rule ids (also listed in docs/guard-rules.md):
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -391,6 +396,34 @@ def resume_automation(
     return b.commit()
 
 
+EVIDENCE_FIELDS = ("visit_date", "facility", "record_number")
+_RECORD_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ./_-]{1,39}$")
+
+
+def check_evidence(evidence: dict[str, Any], *, opened: date | None, today: date) -> dict[str, str]:
+    """Validate structured closure evidence (rule CLOSE-3). Returns the cleaned evidence."""
+    missing = [f for f in EVIDENCE_FIELDS if not str(evidence.get(f) or "").strip()]
+    if missing:
+        raise GuardViolation(f"Closure evidence needs: {', '.join(missing)}.", rule_id="CLOSE-3")
+    try:
+        visit = date.fromisoformat(str(evidence["visit_date"]).strip()[:10])
+    except ValueError:
+        raise GuardViolation("Visit date must be a date (YYYY-MM-DD).", rule_id="CLOSE-3") from None
+    if visit > today:
+        raise GuardViolation("Visit date cannot be in the future.", rule_id="CLOSE-3")
+    if opened and visit < opened:
+        raise GuardViolation("Visit date cannot be before the case was opened.", rule_id="CLOSE-3")
+    facility = str(evidence["facility"]).strip()
+    if len(facility) > 120:
+        raise GuardViolation("Facility name is too long (120 characters at most).", rule_id="CLOSE-3")
+    record = str(evidence["record_number"]).strip()
+    if not _RECORD_RE.match(record):
+        raise GuardViolation(
+            "Record number must be 2 to 40 letters, digits, spaces, dots, dashes or slashes.", rule_id="CLOSE-3"
+        )
+    return {"visit_date": visit.isoformat(), "facility": facility, "record_number": record}
+
+
 def close_case(
     repo: CaseRepository,
     case_id: str,
@@ -398,31 +431,59 @@ def close_case(
     actor: Actor,
     closure_reason: str,
     evidence_ref: str | None = None,
+    evidence: dict[str, Any] | None = None,
     sign_off: bool = False,
     now: datetime | None = None,
+    today: date | None = None,
 ) -> CaseView:
+    """today: the clinic's local date (the API passes Manila time); defaults to the UTC date of now."""
     if not actor.is_human:
         raise GuardViolation("Cases are never closed automatically.", rule_id="CLOSE-1")
     if actor.role not in CLOSE_SIGNOFF_ROLES:
         raise GuardViolation("Only a coordinator or supervisor can close a case.", rule_id="CLOSE-2")
     if not closure_reason:
         raise GuardViolation("A closure reason is required.", rule_id="CLOSE-1")
-    if not evidence_ref and not sign_off:
+    if not evidence_ref and not evidence and not sign_off:
         raise GuardViolation("Closing needs evidence (visit record or upload) or a sign-off.", rule_id="CLOSE-1")
     b = _load(repo, case_id, now)
     v = b.view
     if not is_allowed(v.state, CaseState.CLOSED):
         raise GuardViolation(f"Cannot close from {v.state.value}.", rule_id="SM-1")
+    clean = None
+    if evidence:
+        opened = v.opened_at.date() if v.opened_at else None
+        clean = check_evidence(evidence, opened=opened, today=today or b.now.date())
+        evidence_ref = evidence_ref or (
+            f"{clean['facility']}, record {clean['record_number']}, visit {clean['visit_date']}"
+        )
     b.add(
         EventType.CASE_CLOSED,
         actor,
         {
             "closure_reason": closure_reason,
             "evidence_ref": evidence_ref,
+            "evidence": clean,
             "signed_off_by": f"{actor.id} ({actor.role.value})" if sign_off else None,
         },
-        rule_id="CLOSE-1",
+        rule_id="CLOSE-3" if clean else "CLOSE-1",
     )
+    return b.commit()
+
+
+CONTACT_FIELDS = ("name", "phone")
+STAFF_ROLES_FOR_CONTACT = frozenset({Role.WORKER, Role.COORDINATOR, Role.SUPERVISOR})
+
+
+def record_contact_reveal(
+    repo: CaseRepository, case_id: str, *, actor: Actor, fields: tuple[str, ...], now: datetime | None = None
+) -> CaseView:
+    """Log that a staff member revealed contact details (rule PRIV-1). The values are never logged."""
+    if not actor.is_human or actor.role not in STAFF_ROLES_FOR_CONTACT:
+        raise GuardViolation("Only care staff can reveal a name or phone number.", rule_id="PRIV-1")
+    if not fields or any(f not in CONTACT_FIELDS for f in fields):
+        raise GuardViolation("Pick name and/or phone.", rule_id="PRIV-1")
+    b = _load(repo, case_id, now)
+    b.add(EventType.CONTACT_REVEALED, actor, {"fields": list(fields)}, rule_id="PRIV-1")
     return b.commit()
 
 

@@ -1,6 +1,7 @@
 """Operator tool: wipe the SIMULATED demo cases and reset the demo clock, so the judged demo starts clean.
 
-Only cases marked synthetic are deleted (with their event logs). Real cases are never touched. This is a
+Only cases marked synthetic are deleted (with their event logs), plus SIMULATED contact details.
+Real cases are never touched. This is a
 deliberate exception to "events are append-only", allowed only for fictional demo data, and it is not
 exposed through the API. Run from a machine with gcloud application default credentials:
 
@@ -60,6 +61,12 @@ def main() -> int:
         batch.delete(snap.reference)
         ops += 1
         deleted += 1
+        if ops >= 450:
+            batch.commit()
+            batch, ops = db.batch(), 0
+    for snap in db.collection("contacts").where(filter=FieldFilter("data_label", "==", "SIMULATED")).stream():
+        batch.delete(snap.reference)
+        ops += 1
         if ops >= 450:
             batch.commit()
             batch, ops = db.batch(), 0
