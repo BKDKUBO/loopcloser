@@ -6,6 +6,8 @@ import { ConfirmButton } from "@/components/ConfirmButton";
 import { api, ApiError } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { CONTACT_RESULT_LABELS, LANGUAGE_LABELS, STATE_LABELS, label } from "@/lib/labels";
+import { KindBadge } from "@/components/Kind";
+import { blockReason } from "@/lib/gates";
 import { useCaseAction } from "@/lib/useCaseAction";
 import { DEMO_STAFF, type CaseView, type RenderedMessage } from "@/lib/types";
 
@@ -38,6 +40,8 @@ export function CaseActions({ c, onChange, compact = false, showRecommended = tr
   const canAssign = s.role === "coordinator" || s.role === "supervisor";
   const ra = c.recommended_action;
   const closed = c.state === "closed";
+  const callBlocked = blockReason(c, "call");
+  const smsBlocked = blockReason(c, "sms");
 
   async function doRecommended() {
     if (!ra) return;
@@ -76,15 +80,19 @@ export function CaseActions({ c, onChange, compact = false, showRecommended = tr
         </p>
       )}
       <div className="row" role="group" aria-label="Case actions">
-        <button onClick={() => setPanel(panel === "call" ? null : "call")} aria-expanded={panel === "call"}>Call</button>
+        <button onClick={() => setPanel(panel === "call" ? null : "call")} aria-expanded={panel === "call"}
+          disabled={Boolean(callBlocked)} title={callBlocked ?? undefined}>{callBlocked ? "Call (on hold)" : "Call"}</button>
         {extra}
         <button onClick={() => { setPanel(panel === "message" ? null : "message"); if (panel !== "message") loadPreview(); }}
-          aria-expanded={panel === "message"}>Message</button>
+          aria-expanded={panel === "message"}>{smsBlocked ? "Message (on hold)" : "Message"}</button>
         {canAssign && <button onClick={() => setPanel(panel === "assign" ? null : "assign")}
           aria-expanded={panel === "assign"}>Assign</button>}
       </div>
 
-      {panel === "call" && (
+      {(callBlocked || smsBlocked) && (
+        <p className="pending small" role="note">{callBlocked ?? smsBlocked} See &quot;Checks before contact&quot;.</p>
+      )}
+      {panel === "call" && !callBlocked && (
         <div className="row" aria-label="Call result">
           <span>Call result:</span>
           {(["reached", "no_answer", "invalid_number"] as const).map((v) => (
@@ -116,11 +124,12 @@ export function CaseActions({ c, onChange, compact = false, showRecommended = tr
           {preview && (
             <div className="msg">
               <p>{preview.text}</p>
-              <p className="muted pending">Approved template {preview.template_id} v{preview.template_version}:
+              <p className="muted pending"><KindBadge kind="rule" /> Approved template {preview.template_id} v{preview.template_version}, filled from the record (not AI):
                 pending review. {preview.review_note}</p>
             </div>
           )}
-          <ConfirmButton primary disabled={busy || !preview} confirm="Log this message in the simulated outbox?"
+          {smsBlocked && <p className="error" role="alert">Send is blocked. {smsBlocked}</p>}
+          <ConfirmButton primary disabled={busy || !preview || Boolean(smsBlocked)} confirm="Log this message in the simulated outbox?"
             onConfirm={() => run<{ case: CaseView }>(`/api/cases/${c.id}/messages`, { template_id: tpl, language: lang, channel: "sms" },
               (r) => r.case, "Message logged in the simulated outbox. No real SMS was sent.").then(() => setPanel(null))}>
             Send (simulated)

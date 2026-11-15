@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { useSession } from "@/lib/auth";
+import { KindBadge } from "@/components/Kind";
 
 interface Draft {
   draft_seq: number; at: string; by: string; label: string; model: string | null; mock: boolean;
@@ -49,7 +50,7 @@ export function CallPrep({ caseId, disabledReason, onLogged }: { caseId: string;
       <button disabled={busy || Boolean(disabledReason)} title={disabledReason}
         onClick={() => (draft && !open ? setOpen(true) : post(base))} aria-controls="callprep-panel">
         {busy ? "Drafting…" : draft && !open ? "Show call guide" : draft ? "Draft again" : "Prepare for the call"}
-        {" "}<span className="badge">AI draft</span>
+        {" "}<KindBadge kind="ai" />
       </button>
       {(open || disabledReason || error) && (
         <div id="callprep-panel" className="fullrow card callprep" aria-live="polite">
@@ -58,7 +59,7 @@ export function CallPrep({ caseId, disabledReason, onLogged }: { caseId: string;
           {disabledReason && <p className="muted">{disabledReason}</p>}
           {draft && open && (
             <div>
-              <p className="pending"><strong>{draft.label}</strong>{" "}
+              <p className="pending"><KindBadge kind="ai" /> <strong>{draft.label}</strong>{" "}
                 <span className="muted">({draft.mock ? "offline template, no model" : draft.model}, requested by {draft.by})</span></p>
               {draft.verified ? (
                 <>

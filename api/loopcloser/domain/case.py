@@ -55,6 +55,7 @@ class CaseView(BaseModel):
     appointment: dict[str, Any] | None = None
     priority_override: dict[str, Any] | None = None
     ladder_steps: list[str] = Field(default_factory=list)
+    ladder_held: list[str] = Field(default_factory=list)  # steps that ran without contacting the patient
     # Safety
     automation_paused: bool = False
     red_flag_open: bool = False
@@ -170,6 +171,8 @@ def _apply(view: CaseView | None, ev: Event) -> CaseView:
     elif ev.type == EventType.LADDER_STEP:
         if p["step"] not in v.ladder_steps:
             v.ladder_steps.append(p["step"])
+        if p.get("held") and p["step"] not in v.ladder_held:
+            v.ladder_held.append(p["step"])
     # NOTIFICATION_STATUS, NOTE_ADDED, CONTACT_REVEALED, CASE_EXPORTED and the AI_DRAFT_* audit events never
     # change state.
     v.updated_at = ev.at

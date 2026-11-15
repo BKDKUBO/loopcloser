@@ -20,6 +20,11 @@ describe("timeline", () => {
     expect(describeEvent(ev("contact_attempt", { channel: "chw_visit", result: "reached" })))
       .toBe("Community health worker visit: reached.");
   });
+  it("describes consent and downloads", () => {
+    expect(describeEvent(ev("consent_recorded", { consent: "yes", source: "In person at the home visit" })))
+      .toBe("Consent to contact recorded: yes (In person at the home visit).");
+    expect(describeEvent(ev("case_exported", { kind: "audit_csv" }))).toBe("Downloaded the audit trail (CSV).");
+  });
   it("never prints the revealed values", () => {
     expect(describeEvent(ev("contact_revealed", { fields: ["name", "phone"] }))).toBe("Showed the patient's name and phone to staff.");
   });

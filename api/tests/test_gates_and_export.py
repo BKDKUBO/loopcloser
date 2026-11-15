@@ -150,7 +150,11 @@ def test_ladder_holds_the_sms_reminder_without_consent(repo, lib, coord):
     sent = lambda cid: [e for e in repo.load_events(cid) if e.type.value == "notification_status"]  # noqa: E731
     assert len(sent("C-YES")) == 1 and sent("C-NONE") == []
     held = [e for e in repo.load_events("C-NONE") if e.type.value == "ladder_step" and e.payload["step"] == "reminder"]
-    assert held and "reminder held" in held[0].payload["action"]
+    assert held and "reminder held" in held[0].payload["action"] and held[0].payload["held"] is True
+    v = repo.get_case("C-NONE")
+    status = {s["id"]: s for s in ladder_mod.status(v, day + timedelta(days=5))}
+    assert v.ladder_held == ["reminder"] and "not sent" in status["reminder"]["label"]
+    assert "not sent" not in {s["id"]: s for s in ladder_mod.status(repo.get_case("C-YES"), day)}["reminder"]["label"]
 
 
 def test_recommended_action_asks_for_consent(repo, lib, coord):

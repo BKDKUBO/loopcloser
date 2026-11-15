@@ -27,6 +27,16 @@ export interface RecommendedAction { label: string; kind: string; target: string
 
 export interface LadderStep { day: number; id: string; label: string; state: "done" | "due" | "upcoming" | "not needed" }
 
+export interface Gate {
+  id: string;
+  label: string;
+  status: "pass" | "hold";
+  detail: string;
+  missing: string | null;
+  blocks: string[];
+  rule_id: string;
+}
+
 export interface CaseView {
   id: string;
   participant_id: string;
@@ -66,6 +76,10 @@ export interface CaseView {
   closure_evidence?: string | null;
   closure_evidence_detail?: { visit_date: string; facility: string; record_number: string } | null;
   signed_off_by?: string | null;
+  contact_consent?: "yes" | "no" | null;
+  phone_valid?: boolean;
+  gates?: Gate[];
+  gates_on_hold?: string[];
 }
 
 export interface CaseEvent {

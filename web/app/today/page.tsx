@@ -34,7 +34,11 @@ function CaseCard({ c, onChange }: { c: CaseView; onChange: (c: CaseView) => voi
       <strong><Link href={`/case?id=${encodeURIComponent(c.id)}`}>{c.id}</Link></strong>
       {" · "}{label(SCREENING_LABELS, c.screening_type)}
       <div><span className={`status status-${c.plain_status}`}>{c.plain_status_label}</span>
-        {c.lost_contact && <span className="badge urgent">Lost contact</span>}</div>
+        {c.lost_contact && <span className="badge urgent">Lost contact</span>}
+        {(c.gates_on_hold ?? []).some((g) => g === "consent" || g === "contact_details") && (
+          <span className="badge pending" title="Calls or SMS are on hold until the missing information is recorded (rule GATE-1)">
+            On hold: {(c.gates_on_hold ?? []).filter((g) => g === "consent" || g === "contact_details")
+              .map((g) => (g === "consent" ? "consent" : "phone")).join(", ")}</span>)}</div>
       <div className={overdue ? "urgent" : "muted"}>
         {c.plain_status === "done" ? "Visit done" : dueText(c.days_to_due, closed)} · {ownerLabel(c.owner)}
       </div>

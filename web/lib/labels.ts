@@ -44,6 +44,8 @@ export const EVENT_LABELS: Record<string, string> = {
   ai_draft_created: "AI call guide drafted",
   ai_draft_decision: "AI call guide decision",
   contact_revealed: "Name or phone shown to staff",
+  consent_recorded: "Consent to contact recorded",
+  case_exported: "Case summary or audit trail downloaded",
 };
 
 export const BARRIER_LABELS: Record<string, string> = {

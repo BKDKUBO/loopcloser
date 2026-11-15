@@ -51,6 +51,10 @@ export function describeEvent(e: CaseEvent): string {
         : "Call guide drafted but withheld: it mentioned facts not in the record.";
     case "ai_draft_decision":
       return `Call guide ${p.decision === "use" ? "used" : "discarded"}.`;
+    case "consent_recorded":
+      return `Consent to contact recorded: ${p.consent === "yes" ? "yes" : "no"} (${str(p.source)}).`;
+    case "case_exported":
+      return `Downloaded the ${p.kind === "summary" ? "case summary" : p.kind === "audit_csv" ? "audit trail (CSV)" : "audit trail (JSON)"}.`;
     case "contact_revealed":
       return `Showed the patient's ${(p.fields as string[] | undefined)?.join(" and ") ?? "contact details"} to staff.`;
     default:

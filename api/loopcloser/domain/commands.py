@@ -612,10 +612,21 @@ def override_priority(
 
 
 def record_ladder_step(
-    repo: CaseRepository, case_id: str, *, step: str, day: int, action: str, now: datetime | None = None
+    repo: CaseRepository,
+    case_id: str,
+    *,
+    step: str,
+    day: int,
+    action: str,
+    held: bool = False,
+    now: datetime | None = None,
 ) -> CaseView:
+    """held: the step ran but did not contact the patient (no valid phone, or a consent gate on Hold)."""
     b = _load(repo, case_id, now)
-    b.add(EventType.LADDER_STEP, SYSTEM_ACTOR, {"step": step, "day": day, "action": action}, rule_id="LAD-1")
+    payload: dict[str, Any] = {"step": step, "day": day, "action": action}
+    if held:
+        payload["held"] = True
+    b.add(EventType.LADDER_STEP, SYSTEM_ACTOR, payload, rule_id="LAD-1")
     return b.commit()
 
 

@@ -6,6 +6,9 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { CallPrep } from "@/components/CallPrep";
 import { CaseActions } from "@/components/CaseActions";
 import { ConfirmButton } from "@/components/ConfirmButton";
+import { Downloads } from "@/components/Downloads";
+import { Gates } from "@/components/Gates";
+import { KindBadge, KindLegend } from "@/components/Kind";
 import { PriorityBadge, WhyPriority } from "@/components/Priority";
 import { RequireRole } from "@/components/RequireRole";
 import { RevealContact } from "@/components/RevealContact";
@@ -15,6 +18,7 @@ import { useSession } from "@/lib/auth";
 import {
   BARRIER_LABELS, OVERRIDE_REASON_LABELS, SCREENING_LABELS, STATE_LABELS, actorLabel, dueText, label, ownerLabel,
 } from "@/lib/labels";
+import { eventKind } from "@/lib/kinds";
 import { describeEvent } from "@/lib/timeline";
 import { useCaseAction } from "@/lib/useCaseAction";
 import type { CaseEvent, CaseView } from "@/lib/types";
@@ -74,7 +78,7 @@ function NextActionPanel({ c, onChange }: { c: CaseView; onChange: (c: CaseView)
 
   return (
     <aside className="sticky" aria-labelledby="nap">
-      <h2 id="nap">Next action</h2>
+      <h2 id="nap">Next action <KindBadge kind="rule" /></h2>
       <p><strong>{ra?.label}</strong></p>
       <p className="muted">Why: the case is at &quot;{label(STATE_LABELS, c.state)}&quot;
         {c.plain_status === "done" ? "." : ` and is ${dueText(c.days_to_due).toLowerCase()}.`}
@@ -99,6 +103,8 @@ function NextActionPanel({ c, onChange }: { c: CaseView; onChange: (c: CaseView)
           {ra?.kind === "close" && isLead && (c.state === "visit_completed"
             ? <CloseWithEvidence c={c} run={run} busy={busy} />
             : <CloseWithSignOff c={c} run={run} busy={busy} />)}
+          {ra?.kind === "consent" && <p className="pending">On hold until consent to contact is recorded. Use
+            &quot;Checks before contact&quot; on the left. A home visit is still allowed.</p>}
           {ra?.kind === "close" && !isLead && <p className="muted">Only a coordinator or supervisor can close a case (rule CLOSE-2).</p>}
           <hr />
           <CaseActions c={c} onChange={onChange} showRecommended={false}
@@ -165,7 +171,7 @@ function Barriers({ c, onChange }: { c: CaseView; onChange: (c: CaseView) => voi
   const { run, busy, error } = useCaseAction(onChange);
   const [b, setB] = useState("transport");
   return (
-    <section aria-labelledby="bar"><h2 id="bar">Barriers</h2>
+    <section aria-labelledby="bar"><h2 id="bar">Barriers <KindBadge kind="fact" /></h2>
       {(c.barriers_open ?? []).length === 0 ? <p className="muted">No open barriers.</p> : (
         <ul>{c.barriers_open!.map((x) => <BarrierItem key={x} c={c} barrier={x} onChange={onChange} />)}</ul>
       )}
@@ -209,13 +215,20 @@ function CaseDetail() {
     <>
       <h1>Case {c.id} <span className="muted">· {c.participant_id}</span></h1>
       <p><RevealContact caseId={c.id} synthetic={c.synthetic} onLogged={changed} /></p>
+      <KindLegend />
       <p>
+        <KindBadge kind="rule" />
         <PriorityBadge p={c.priority} />
         {c.clinical_urgency === "urgent" && <span className="badge urgent">Clinically urgent</span>}
         <span className={`status status-${c.plain_status}`}>{c.plain_status_label}</span>
         <span className={`badge ${overdue ? "urgent" : ""}`}>{c.plain_status === "done" ? (closed ? "Closed" : "Visit done") : dueText(c.days_to_due)}</span>
-        <span className="badge">Owner: {ownerLabel(c.owner)}</span>
         {c.lost_contact && <span className="badge urgent">Lost contact</span>}
+      </p>
+      <p>
+        <KindBadge kind="fact" />
+        <span className="badge">Owner: {ownerLabel(c.owner)}</span>
+        <span className="badge">Consent to contact: {c.contact_consent === "yes" ? "yes" : c.contact_consent === "no" ? "declined" : "not recorded"}</span>
+        <span className="badge">Phone: {c.phone_valid === false ? "none valid" : "on file"}</span>
       </p>
       <p className="muted">{label(SCREENING_LABELS, c.screening_type)} · status in detail: {label(STATE_LABELS, c.state)} ·
         {" "}<span className="pending">pathway {c.pathway_id} v{c.pathway_version}, pending clinical sign-off</span> · fictional (SIMULATED) case ·
@@ -223,31 +236,33 @@ function CaseDetail() {
       {c.red_flag_open && <p className="error">Red flag open. Automation is paused until a person resolves it.</p>}
       {c.data_quality.includes("no_owner") && !closed && <p className="error">Nobody owns this case yet. Assign an owner.</p>}
       {closed && (
-        <p className="ok">Closed: {c.closure_reason}.{" "}
+        <p className="ok"><KindBadge kind="fact" /> Closed: {c.closure_reason}.{" "}
           {ev ? <>Evidence: visit {ev.visit_date} at {ev.facility}, record {ev.record_number}.</> : c.signed_off_by ? <>Signed off by {c.signed_off_by}.</> : c.closure_evidence}</p>
       )}
       <div className="detail">
         <div>
-          <section aria-labelledby="pri"><h2 id="pri">Follow-up priority</h2>
+          <Gates c={c} onChange={changed} />
+          <section aria-labelledby="pri"><h2 id="pri">Follow-up priority <KindBadge kind="rule" /></h2>
             <p>{c.priority?.explanation}</p>
             <WhyPriority p={c.priority} open />
             {s.role === "supervisor" && !closed && <OverrideForm c={c} onChange={changed} />}
           </section>
           <SafetyLine pathway={`${c.pathway_id} v${c.pathway_version}`} collapsed />
           <Barriers c={c} onChange={changed} />
-          <section aria-labelledby="lad"><h2 id="lad">Escalation ladder (day {c.day ?? 0})</h2>
+          <section aria-labelledby="lad"><h2 id="lad">Escalation ladder (day {c.day ?? 0}) <KindBadge kind="rule" /></h2>
             <ol className="ladder">{(c.ladder ?? []).map((st) => (
               <li key={st.id} className={st.state.replace(" ", "-")}>Day {st.day}: {st.label} · {st.state}</li>))}</ol>
           </section>
           <section aria-labelledby="tl"><h2 id="tl">Timeline (full event log)</h2>
             {events.length === 0 ? <p className="muted">No events visible for your role.</p> : (
               <ol className="timeline">{events.map((e) => (
-                <li key={e.id}>{describeEvent(e)}
+                <li key={e.id}><KindBadge kind={eventKind(e)} /> {describeEvent(e)}
                   <div className="muted small">{actorLabel(e.actor)} · {new Date(e.at).toLocaleString()}
                     {e.rule_id && <> · rule {e.rule_id}</>} · <code>{e.type}</code></div>
                 </li>))}</ol>
             )}
           </section>
+          <Downloads caseId={c.id} onLogged={changed} />
         </div>
         <NextActionPanel c={c} onChange={changed} />
       </div>

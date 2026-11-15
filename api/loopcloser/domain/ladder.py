@@ -89,7 +89,16 @@ def status(v: CaseView, today: date, ladder: tuple[Step, ...] = DEFAULT_LADDER) 
             return "not needed"
         return "due" if d >= s.day else "upcoming"
 
-    return [{"day": s.day, "id": s.id, "label": s.label, "state": state(s)} for s in ladder]
+    def text(s: Step) -> str:
+        if s.id in v.ladder_held:
+            return (
+                "SMS reminder not sent: held by a check (see the timeline)"
+                if s.id == "reminder"
+                else f"{s.label}: held"
+            )
+        return s.label
+
+    return [{"day": s.day, "id": s.id, "label": text(s), "state": state(s)} for s in ladder]
 
 
 def run_case(
@@ -109,6 +118,7 @@ def run_case(
         if step.id in v.ladder_steps or day_of(v, today) < step.day or not _needed(step.id, v):
             continue
         action = step.label
+        held = False
         if step.id == "reminder":
             if v.phone_valid and v.contact_consent == "yes":
                 lang = v.language if v.language in SUPPORTED_LANGUAGES else "en"
@@ -125,12 +135,14 @@ def run_case(
                 )
                 action = f"Reminder sent by SMS ({lang}, simulated)"
             elif v.contact_consent != "yes":
+                held = True
                 action = (
                     "Patient declined contact: reminder held (rule GATE-1), a coordinator decides the next step"
                     if v.contact_consent == "no"
                     else "Consent to contact not recorded: reminder held (rule GATE-1), record consent first"
                 )
             else:
+                held = True
                 action = "No valid phone: reminder skipped, community health worker visit needed"
         elif step.id == "supervisor" and v.state != S.ESCALATED and is_allowed(v.state, S.ESCALATED):
             cmd.transition(
@@ -142,7 +154,7 @@ def run_case(
                 rule_id="LAD-1",
                 payload={"reason": f"Day {step.day}: not booked yet"},
             )
-        cmd.record_ladder_step(repo, case_id, step=step.id, day=step.day, action=action, now=now)
+        cmd.record_ladder_step(repo, case_id, step=step.id, day=step.day, action=action, held=held, now=now)
         actions.append(f"{step.id}: {action}")
     return actions
 
