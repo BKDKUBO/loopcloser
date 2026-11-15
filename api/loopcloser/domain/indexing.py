@@ -26,6 +26,7 @@ from typing import Any
 from . import ladder as ladder_mod
 from . import priority as prio
 from .case import CaseView
+from .localtime import local_date
 from .next_action import lost_contact, plain_status
 from .states import CaseState as S
 
@@ -62,7 +63,7 @@ def ladder_due(v: CaseView, steps: tuple[ladder_mod.Step, ...] = ladder_mod.DEFA
     """Earliest date a not-yet-run, currently needed ladder step becomes due. Any write recomputes it."""
     if v.state == S.CLOSED or v.automation_paused or not v.opened_at:
         return None
-    opened = v.opened_at.date()
+    opened = local_date(v.opened_at)
     days = [s.day for s in steps if s.id != "upload" and s.id not in v.ladder_steps and ladder_mod.needed(s.id, v)]
     return opened + timedelta(days=min(days)) if days else None
 

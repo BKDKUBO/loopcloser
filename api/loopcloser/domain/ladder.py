@@ -19,6 +19,7 @@ from . import commands as cmd
 from .case import CaseView, project
 from .errors import Conflict
 from .events import AUTOMATION_ACTOR, SYSTEM_ACTOR, Event
+from .localtime import local_date
 from .priority import SUPPORTED_LANGUAGES
 from .states import CaseState as S
 from .states import is_allowed
@@ -56,7 +57,7 @@ def load_ladder(raw: str | None) -> tuple[Step, ...]:
 
 
 def day_of(v: CaseView, today: date) -> int:
-    opened = v.opened_at.date() if v.opened_at else today
+    opened = local_date(v.opened_at) if v.opened_at else today
     return (today - opened).days
 
 

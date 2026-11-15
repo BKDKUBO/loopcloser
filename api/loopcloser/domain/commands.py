@@ -45,6 +45,7 @@ from .case import CaseView, project
 from .errors import GuardViolation, NotFound
 from .events import SYSTEM_ACTOR, Actor, Event, EventType
 from .gates import CONSENT_VALUES
+from .localtime import local_date
 from .priority import TIERS
 from .roles import CLOSE_SIGNOFF_ROLES, Role
 from .states import RED_FLAG_STATES, REQUIRED_FIELDS, CaseState, is_allowed
@@ -459,7 +460,7 @@ def close_case(
         raise GuardViolation(f"Cannot close from {v.state.value}.", rule_id="SM-1")
     clean = None
     if evidence:
-        opened = v.opened_at.date() if v.opened_at else None
+        opened = local_date(v.opened_at) if v.opened_at else None
         clean = check_evidence(evidence, opened=opened, today=today or b.now.date())
         evidence_ref = evidence_ref or (
             f"{clean['facility']}, record {clean['record_number']}, visit {clean['visit_date']}"
