@@ -30,9 +30,9 @@
     },
     "latency_ms": {
       "requests": 165,
-      "p50": 4.04,
-      "p95": 5.2,
-      "max": 10.69
+      "p50": 3.86,
+      "p95": 4.82,
+      "max": 6.35
     },
     "failures": [],
     "lifecycle_firestore_ops": {
@@ -46,48 +46,48 @@
         "data_label": "SIMULATED"
       },
       "ladder_off": {
-        "seeded": 1018,
+        "seeded": 1019,
         "day": 14,
-        "as_of": "2026-11-28",
-        "open": 1016,
+        "as_of": "2026-11-29",
+        "open": 1017,
         "unowned": 177,
         "unaccountable": 177,
         "overdue": 355,
         "silently_overdue": 128,
-        "reachable_open": 892,
+        "reachable_open": 893,
         "reachable_contacted": 624,
         "red_flag_cases": 2,
         "red_flag_touched_by_automation": 0,
         "escalated_queue": 1,
         "lane_counts": {
-          "needs_action": 250,
+          "needs_action": 251,
           "overdue": 355,
           "waiting": 410,
           "completed": 1
         }
       },
       "ladder_on": {
-        "seeded": 1018,
+        "seeded": 1019,
         "day": 14,
-        "as_of": "2026-11-28",
-        "open": 1016,
+        "as_of": "2026-11-29",
+        "open": 1017,
         "unowned": 177,
         "unaccountable": 0,
         "overdue": 355,
         "silently_overdue": 0,
-        "reachable_open": 892,
+        "reachable_open": 893,
         "reachable_contacted": 625,
         "red_flag_cases": 2,
         "red_flag_touched_by_automation": 0,
-        "escalated_queue": 379,
+        "escalated_queue": 380,
         "lane_counts": {
-          "needs_action": 251,
+          "needs_action": 252,
           "overdue": 355,
           "waiting": 409,
           "completed": 1
         }
       },
-      "reachable_contacted_share_on": 0.701,
+      "reachable_contacted_share_on": 0.7,
       "targets_met": {
         "T1_unaccountable_on_is_0": true,
         "T2_silently_overdue_on_is_0": true,

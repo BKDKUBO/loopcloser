@@ -8,8 +8,8 @@ Nothing here is a clinical result.
 
 ## Demo data is synthetic
 
-The demo seed loads 1,000 generated patients (`api/loopcloser/synth/generator.py`, seed 42) plus 13 hand-written
-stories (`DEMO_STORIES`, C-DEMO-01 to C-DEMO-13). Every row is labeled **SIMULATED**. The stories are replayed
+The demo seed loads 1,000 generated patients (`api/loopcloser/synth/generator.py`, seed 42) plus 14 hand-written
+stories (`DEMO_STORIES`, C-DEMO-01 to C-DEMO-14). Every row is labeled **SIMULATED**. The stories are replayed
 through the same commands the app uses (`synth/stories.py`), so their timelines are real events, not pasted
 text, but the people are fictional. Injected failure rates (invalid phone, no-show, transport barrier and so
 on) are team test settings, not statistics about any real population; the values are listed in
@@ -34,9 +34,10 @@ usability with real health workers. We do not claim improved outcomes.
 
 ## Ladder comparison: T5 missed, and the supervisor queue floods
 
-Targets were written down in commit `d908191` before the comparison was run. The run (2026-11-14, `make eval`)
-used the demo seed in two in-memory stores, 1,000 generated patients plus the hand-made edge cases and 13
-scripted stories (1,018 cases opened; 1,016 still open on Day 14). The demo clock was advanced one day at a
+Targets were written down in commit `d908191` before the comparison was run. The latest run (2026-11-15,
+`make eval`) used the demo seed in two in-memory stores, 1,000 generated patients plus the hand-made edge cases
+and 14 scripted stories (1,019 cases opened; 1,017 still open on Day 14). The first run on 2026-11-14, with 13
+stories, gave 625 of 892 (70.1%) for T5 and a queue of 379; story 14 is the only change. The demo clock was advanced one day at a
 time for 14 days. No simulated staff or patient actions happened in either arm, on purpose: this measures only
 what the ladder does when nobody follows up. All cases are SIMULATED. Full table: [EVAL.md](../EVAL.md).
 
@@ -46,23 +47,24 @@ what the ladder does when nobody follows up. All cases are SIMULATED. Full table
 | T2 | Silently overdue | 128 | 0 | 0 | yes |
 | T3 | Unowned (no named owner) | 177 | 177 | same as off | yes |
 | T4 | Overdue | 355 | 355 | same as off | yes |
-| T5 | Cases with a valid phone that got at least one reminder or contact | 624 of 892 | 625 of 892 (70.1%) | at least 90% | **missed** |
+| T5 | Cases with a valid phone that got at least one reminder or contact | 624 of 893 | 625 of 893 (70.0%) | at least 90% | **missed** |
 | T6 | Red-flag cases touched by automation | 0 of 2 | 0 of 2 | 0 | yes |
-| | Supervisor's escalated queue (no target) | 1 | 379 | | |
+| | Supervisor's escalated queue (no target) | 1 | 380 | | |
 
 What the misses show, plainly (same points as EVAL.md):
 
-- **T5 missed (70.1% against a 90% target).** The ladder added a contact for only one more patient than doing
-  nothing. All 267 reachable patients still uncontacted on Day 14 were results nobody ever reviewed (state
-  *new result*). The ladder escalated every one of them to the supervisor, but its reminder step only runs for
+- **T5 missed (70.0% against a 90% target).** The ladder added a contact for only one more patient than doing
+  nothing. Of the 268 reachable patients still uncontacted on Day 14, 267 were results nobody ever reviewed
+  (state *new result*); the other is C-DEMO-14, held on purpose because consent to contact was not recorded.
+  The ladder escalated every one of the 267 to the supervisor, but its reminder step only runs for
   reviewed or notified cases, so no patient message went out. If no one reviews a result, the ladder makes it
   visible but does not reach the patient.
-- **The "ladder off" target for T5 was also wrong.** We wrote 0, but 624 of 892 reachable patients already had
+- **The "ladder off" target for T5 was also wrong.** We wrote 0, but 624 of 893 reachable patients already had
   a contact in the seeded history before Day 0. The comparison is still fair (same cohort in both arms), but
   the off-arm number we predicted was not.
-- **The ladder creates a supervisor flood.** 379 open cases end up in the escalated queue on Day 14 (1 with
+- **The ladder creates a supervisor flood.** 380 open cases end up in the escalated queue on Day 14 (1 with
   the ladder off): one person, no cap. T1 and T2 are met by moving responsibility to that person, not by
-  getting care done. At real volumes a supervisor could not work 379 cases. T4 confirms it: overdue cases are
+  getting care done. At real volumes a supervisor could not work 380 cases. T4 confirms it: overdue cases are
   unchanged (355 in both arms).
 
 Possible fixes listed in EVAL.md are not built: send the approved reminder to new results with a valid phone
@@ -72,7 +74,7 @@ before staff review it), and cap or batch supervisor escalations with a per-owne
 ## Dashboard and Today numbers are demo data
 
 Figures on `/dashboard` and the Today summary sentence (for example "377 to contact. 93 overdue...") come from
-the seeded demo cohort and the 13 scripted stories, not from a real facility. Screenshots in
+the seeded demo cohort and the 14 scripted stories, not from a real facility. Screenshots in
 [docs/screenshots/v2/](screenshots/v2/) were taken from that same local `finalist-v2` build.
 
 ## SMS is simulated and not priced
@@ -93,13 +95,20 @@ escalate or ask for human review (rule AUTO-1). A delivered message can move a c
 most, and never closes it (MSG-2, CLOSE-1). If nobody reviews a result, the patient is not contacted
 automatically; the case is escalated so a supervisor can see it. That is also why T5 missed.
 
+Pass/hold gates (rule GATE-1) add a second stop. Each case shows consent to contact, contact details, result on
+file, owner assigned and no open red flag, each as Pass or Hold. Calls and SMS, including the automatic Day 4
+reminder, are blocked while consent is not recorded or there is no valid phone; every contact attempt is
+blocked if the patient declined contact. Consent is recorded by a staff member with its source, never
+inferred. Limits: consent is a yes/no flag with a free-text source, not a signed consent form or a legal
+review of Philippine Data Privacy Act consent requirements; all generated demo rows have consent set to yes
+(SIMULATED), so the gate only holds C-DEMO-14 and real imports without a consent column.
 Closing still needs a coordinator or supervisor, a reason, and structured evidence or a sign-off (CLOSE-1,
 CLOSE-2, CLOSE-3). Red flags pause all automation until a person resolves them (RF-1, RF-2).
 
 ## Other limits already stated in the repo
 
 - The live site at https://loopcloser-bkdkubo.web.app still runs the earlier build until `finalist-v2` is
-  merged and redeployed (which has not been approved). The 13-story demo path and the v2 screenshots describe
+  merged and redeployed (which has not been approved). The 14-story demo path and the v2 screenshots describe
   this branch, run locally.
 - Default Cloud Run scale is min 0, max 1, so the first request after a quiet period can take about 7 to 10
   seconds (measured cold starts in EVAL.md: 10.2 s and 6.9 s).
@@ -107,6 +116,11 @@ CLOSE-2, CLOSE-3). Red flags pause all automation until a person resolves them (
   Singapore. They contain only masked, fictional case facts. There is no Model Armor screening yet.
 - The Google sign-in provider is not switched on yet; judges use Demo mode.
 - Only English and Filipino template texts exist. Nothing has been tested outside the Philippines.
+- There is no integration with any health record system. Malaffi, Oracle Health and Epic are named in the
+  README roadmap only as possible future targets.
+- Downloads (case summary, audit trail CSV and JSON) are staff-only and logged, and mask the participant id.
+  Free-text notes and closure reasons are included as typed, so a real deployment would need a policy on what
+  staff may write in them. The printable summary is the browser's Print or Save as PDF; no server-side PDF.
 - Firestore case-list queries are still full scans (indexes are declared; moving off scans is still open).
 - There is no load test with the synthetic cohort yet, and no uptime check or alert policy on `/ready`.
 - The per-patient database cost of about US$0.00002 in EVAL.md used us-central1 list prices as an order of

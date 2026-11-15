@@ -21,6 +21,12 @@ No clinician has reviewed the labels or the pathways, and all cases are fictiona
 | Escalation after failed contacts | 4 | 4 | 0 | 0 |
 | **Total** | **55** | **55** | **0** | **0** |
 
+Re-run 2026-11-15 (Manila) on `finalist-v2` after the consent gate (GATE-1) was added: still 55 of 55, 0 false
+positives, 0 false negatives. The first re-run without changes failed 5 cases (G24 and E01 to E04), because the
+gate blocks calls when consent to contact is not recorded and these scenarios had no consent field. We added
+`contact_consent: "yes"` to the scenario defaults (so each case has consent on file, as the scenarios assumed)
+and changed no label. GATE-1 itself is tested in `api/tests/test_gates_and_export.py`, not in this labeled set.
+
 How false positives and negatives are counted:
 - Routing: a false positive marks a case urgent or red-flagged when the label says it is not; a false negative
   misses one the label expects.
@@ -38,7 +44,7 @@ was not changed for that check.
 
 | Where | What | Result |
 |---|---|---|
-| Local, in-process (no network) | 165 API requests across the eval | p50 4.5 ms, p95 5.8 ms |
+| Local, in-process (no network) | 165 API requests across the eval | p50 4.5 ms, p95 5.8 ms (Nov 9); p50 3.9 ms, p95 4.8 ms (Nov 15 re-run) |
 | Live demo, from our test machine | `/health`, 5 requests | p50 321 ms (mostly network) |
 | Live demo | Today view as supervisor (`/api/today`), 5 requests | p50 961 ms, p95 4.0 s (first call slower) |
 | Live demo | One case detail, 5 requests | p50 352 ms, p95 615 ms |
@@ -114,11 +120,14 @@ Targets:
 
 Also reported, no target: the supervisor's escalated queue size on Day 14 (workload the ladder creates).
 
-### Results (run 2026-11-14, after the targets above were committed in `d908191`)
+### Results (re-run 2026-11-15; first run 2026-11-14, both after the targets above were committed in `d908191`)
 
 Command: `make eval` (`eval/run_eval.py`, full output in `eval/results.json`). Cohort: 1,000 generated patients
-plus the hand-made edge cases and 13 scripted demo stories that the seed also loads (1,018 cases opened, 1,016 still
-open on Day 14, 2026-11-28 on the demo clock). All SIMULATED.
+plus the hand-made edge cases and 14 scripted demo stories that the seed also loads (1,019 cases opened, 1,017 still
+open on Day 14, 2026-11-29 on the demo clock). All SIMULATED. The 2026-11-14 run had 13 stories (1,018 cases):
+T5 was 625 of 892 (70.1%) and the queue 379. The only change since is story 14 (C-DEMO-14, consent not
+recorded), which has a valid phone but is held by the consent gate, so it adds one reachable, uncontacted case
+and, after Day 10, one more escalated case.
 
 | # | Measure at Day 14 (open cases) | Ladder off | Ladder on | Target | Met? |
 |---|---|---|---|---|---|
@@ -126,22 +135,22 @@ open on Day 14, 2026-11-28 on the demo clock). All SIMULATED.
 | T2 | Silently overdue | 128 | 0 | 0 | ✅ |
 | T3 | Unowned (no named owner) | 177 | 177 | same as off | ✅ |
 | T4 | Overdue | 355 | 355 | same as off | ✅ |
-| T5 | Cases with a valid phone that got at least one reminder or contact | 624 of 892 | 625 of 892 (70.1%) | at least 90% | ❌ **missed** |
+| T5 | Cases with a valid phone that got at least one reminder or contact | 624 of 893 | 625 of 893 (70.0%) | at least 90% | ❌ **missed** |
 | T6 | Red-flag cases touched by automation | 0 of 2 | 0 of 2 | 0 | ✅ |
-| | Supervisor's escalated queue (no target) | 1 | 379 | | |
+| | Supervisor's escalated queue (no target) | 1 | 380 | | |
 
 **Misses and what they show, plainly:**
-- **T5 missed (70.1% against a 90% target).** The ladder added a contact for only 1 more patient than doing
-  nothing. All 267 reachable patients still uncontacted on Day 14 were results nobody ever reviewed
-  (state *new result*); the ladder escalated every one of them to the supervisor, but its reminder step only
+- **T5 missed (70.0% against a 90% target).** The ladder added a contact for only 1 more patient than doing
+  nothing. Of the 268 reachable patients still uncontacted on Day 14, 267 were results nobody ever reviewed
+  (state *new result*) and 1 is C-DEMO-14, held on purpose because consent to contact was not recorded. For the 267, the ladder escalated every one of them to the supervisor, but its reminder step only
   runs for reviewed or notified cases, so no patient message went out. This is a real design gap, not a test
   artifact: if no one reviews a result, the ladder makes it visible but does not reach the patient.
-- **Our "ladder off" target for T5 was also wrong.** We wrote 0, but 624 of 892 reachable patients already had a
+- **Our "ladder off" target for T5 was also wrong.** We wrote 0, but 624 of 893 reachable patients already had a
   contact in the seeded history before Day 0. The comparison is still fair (same cohort in both arms), but the
   off-arm number we predicted was not.
-- **The ladder creates a supervisor flood.** 379 open cases end up in the escalated queue on Day 14 (1 with the
+- **The ladder creates a supervisor flood.** 380 open cases end up in the escalated queue on Day 14 (1 with the
   ladder off). T1 and T2 are met by moving responsibility to one person, not by getting care done; at real
-  volumes a supervisor could not work 379 cases. T4 confirms it: overdue cases are unchanged (355 in both arms).
+  volumes a supervisor could not work 380 cases. T4 confirms it: overdue cases are unchanged (355 in both arms).
 - **What this does not show:** anything about real patients. No staff or patient actions are simulated in either
   arm, on purpose, so this measures only what the ladder does when nobody acts.
 

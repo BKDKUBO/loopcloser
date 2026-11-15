@@ -6,6 +6,28 @@ Team BKD KUBO · Future Health Digital Innovation Challenge · Challenge 05: Clo
 
 Manuel III Ocaña, Product Lead & Solution Architect · Elson Mojica, Domain Lead (Collections & Follow-up) & QA.
 
+## How it works: each step, and exactly where AI sits
+
+```mermaid
+flowchart LR
+    A["1. Result uploaded<br/>(CSV import, validated)<br/>RECORDED FACT"] --> B["2. Rules route it:<br/>pathway, deadline,<br/>priority points<br/>RULE RESULT"]
+    B --> C["3. A person reviews<br/>the result<br/>HUMAN DECIDES"]
+    C --> D["4. Checks before contact:<br/>consent, phone, result,<br/>owner, red flag<br/>PASS or HOLD (rule)"]
+    D -->|Hold| H["Held: no call, no SMS.<br/>Staff record the<br/>missing information"]
+    H --> D
+    D -->|Pass| E["5. Staff contact the patient:<br/>call, approved SMS template,<br/>home visit<br/>HUMAN DECIDES"]
+    AI["Optional call guide drafted<br/>by Gemini for staff, checked<br/>against the record<br/>AI-WRITTEN (draft only)"] -.->|"read before the call, then Use or Discard"| E
+    E --> F["6. Booked, visit recorded<br/>RECORDED FACT"]
+    F --> G["7. Closed by a coordinator<br/>with evidence or sign-off<br/>HUMAN DECIDES"]
+    L["Escalation ladder, Day 2 to 14:<br/>reminder (gated), home visit,<br/>supervisor<br/>RULE RESULT"] -.-> E
+    R["Red flag at any step:<br/>automation stops,<br/>a person takes over"] -.-> C
+```
+
+AI appears in one place only: an optional call guide that staff can read before phoning a patient. It never
+decides, never sends a message, and never changes a case. Rules decide routing, deadlines, priority and the
+pass/hold checks; people review, contact and close. The case page labels every piece of content as a
+**Recorded fact**, a **Rule result** or **AI-written** ([screenshot](docs/screenshots/v2/16-case-labels-and-gates.png)).
+
 ## For judges: start here
 
 | | |
@@ -20,12 +42,12 @@ Manuel III Ocaña, Product Lead & Solution Architect · Elson Mojica, Domain Lea
 > **First load can take about 10 seconds.** The API scales to zero when nobody is using it, so it costs nothing at
 > idle. After the first request it answers in well under a second. All data is **SIMULATED** and fictional.
 
-### Demo path: 13 scripted patients (no sign-in)
+### Demo path: 14 scripted patients (no sign-in)
 
 > This path is for the `finalist-v2` build. The live site still runs the earlier build until it is redeployed
 > after the early review; locally: `make api`, `make web`, `make seed`. Every patient below is **SIMULATED**.
 
-The seed adds 13 hand-written stories (`api/loopcloser/synth/generator.py`, `DEMO_STORIES`) on top of 1,000
+The seed adds 14 hand-written stories (`api/loopcloser/synth/generator.py`, `DEMO_STORIES`) on top of 1,000
 generated patients. Each story is replayed through the same commands the app uses (`synth/stories.py`), so its
 timeline is real events, not pasted text. Type the case id into **Find a case** on Today, or open `/case?id=...`.
 
@@ -46,7 +68,14 @@ timeline is real events, not pasted text. Type the case id into **Find a case** 
    a sign-off, **C-DEMO-09** speaks Cebuano (needs a navigator, +1 priority), **C-DEMO-10** has no phone so the
    SMS reminder is skipped, **C-DEMO-11** borderline result, **C-DEMO-12** critical and urgent, **C-DEMO-13**
    32 days overdue and escalated.
-7. Then open **Today** (summary sentence, My cases, screening filter), **Dashboard** (program view) and
+7. **C-DEMO-14, missing information: the system holds instead of acting.** Consent to contact was not recorded
+   at screening. **Checks before contact** shows Consent on Hold (the other four pass), Call and Message show
+   "on hold", the Day 4 SMS reminder in the ladder and timeline says it was held and not sent, and the API
+   refuses a call or SMS with rule GATE-1. A home visit is still allowed. Record consent ("Patient agreed to be
+   contacted", with how it was obtained) and the hold lifts; the consent is an event in the timeline.
+8. On any case, **Download** gives a printable summary (Save as PDF) and the audit trail as CSV or JSON. Staff
+   only; each download is logged (rule PRIV-2).
+9. Then open **Today** (summary sentence, My cases, screening filter), **Dashboard** (program view) and
    **Import** (CSV check before anything is saved).
 
 Screenshots of this path: [docs/screenshots/v2/](docs/screenshots/v2/).
@@ -79,20 +108,21 @@ versioned hash-locked pathways, a published priority points table, guard rules, 
 
 Measured results in [EVAL.md](EVAL.md): 55 of 55 labeled synthetic cases follow the published rules (0 false
 positives, 0 false negatives), including guard rules 26/26. The same eval includes a ladder-on vs ladder-off
-comparison on 1,018 synthetic cases (targets written in commit `d908191` before the run): T1 unaccountable and
+comparison on 1,019 synthetic cases (targets written in commit `d908191` before the run): T1 unaccountable and
 T2 silently overdue both went to 0; T3 (177 unowned) and T4 (355 overdue) were unchanged, as targeted; T5 missed
-(see [Assumptions and limitations](#assumptions-and-limitations)). API tests on this branch: 142 passed, 3
-skipped (they need the Firestore emulator, which needs Java); `make test`.
+(see [Assumptions and limitations](#assumptions-and-limitations)). API tests on this branch: 154 passed, 3
+skipped (they need the Firestore emulator, which needs Java); web tests: 18 passed; `make test`.
 
 ### 3. Working solution and demonstration quality
 
 Live demo: https://loopcloser-bkdkubo.web.app (Demo mode, no sign-in). A demo video is still a placeholder in
 this README and the deck; the official submission pack for 20 November asks for one, along with the live link
-and this documentation. The 13 scripted demo stories and the click path are in
-[Demo path](#demo-path-13-scripted-patients-no-sign-in). Screenshots of that path:
-[docs/screenshots/v2/](docs/screenshots/v2/) (14 images, including Today, the lead case with closure evidence,
-blocked close and contact reveal, Prepare for the call, a red-flag case, CSV import, the program dashboard and
-the patient's phone). The live site still runs the earlier build until `finalist-v2` is redeployed.
+and this documentation. The 14 scripted demo stories and the click path are in
+[Demo path](#demo-path-14-scripted-patients-no-sign-in). Screenshots of that path:
+[docs/screenshots/v2/](docs/screenshots/v2/) (18 images, including Today, the lead case with closure evidence,
+blocked close and contact reveal, Prepare for the call, a red-flag case, CSV import, the program dashboard,
+the patient's phone, content labels and pass/hold checks (16), the missing-information case on hold (15),
+the AI-written label on a call guide (17, offline template locally) and the printable summary (18)). The live site still runs the earlier build until `finalist-v2` is redeployed.
 
 ### 4. Responsible AI, safety and data governance
 
@@ -104,6 +134,16 @@ until a logged reveal (PRIV-1). Official patient messages are approved templates
 (MSG-3). AI only drafts a call guide for staff, from masked facts, with every number and date verified; drafts
 never change case state. See [The safety line](#the-safety-line). No real patient data is in this demo; all
 cases are labeled SIMULATED.
+
+Every case page labels its content as **Recorded fact**, **Rule result** or **AI-written**, and shows
+**Checks before contact** (consent to contact, contact details, result on file, owner assigned, no open red
+flag) as Pass or Hold with what is missing. Calls and SMS are blocked while consent or a valid phone is
+missing (rule GATE-1; demo case C-DEMO-14). The case summary and audit trail can be downloaded by staff, and
+each download is logged (PRIV-2).
+
+- **Frameworks:** [docs/frameworks.md](docs/frameworks.md) maps LoopCloser to the six principles of WHO's
+  *Ethics and governance of artificial intelligence for health* and to the DECIDE-AI reporting items, with what
+  we can report now and what only a pilot would produce. It is a self-assessment, not an external review.
 
 ### 5. Scalability and deployment readiness
 
@@ -118,7 +158,9 @@ templates exist, and nothing has been tested outside the Philippines.
 ### 6. Commercial viability and path to pilot
 
 A 90-day pilot at one rural health unit is proposed, not agreed; no facility has signed up, and pathways still
-need clinical sign-off before real patients. Who could pay after a pilot is listed as options only (the LGU or
+need clinical sign-off before real patients. How a pilot would produce evidence (first a check against cases
+a clinician already knows, then the measures to collect) is in
+[docs/pilot-evidence-plan.md](docs/pilot-evidence-plan.md), **a plan, not done**. Who could pay after a pilot is listed as options only (the LGU or
 RHU operating budget, or PhilHealth); no discussion has taken place. Cost per facility per month at list prices:
 about US$0.34 at 100 abnormal results, about US$0.85 at 300. SMS is not included (sending is simulated; no
 provider is chosen yet). Full math: [Pilot and cost](#pilot-and-cost).
@@ -127,15 +169,16 @@ provider is chosen yet). Full math: [Pilot and cost](#pilot-and-cost).
 
 Fuller write-up: [docs/assumptions-and-limitations.md](docs/assumptions-and-limitations.md).
 
-- **All demo cases are synthetic.** The seed is 1,000 generated patients plus 13 hand-written stories, every row
+- **All demo cases are synthetic.** The seed is 1,000 generated patients plus 14 hand-written stories, every row
   labeled SIMULATED. Injected failure rates are team test settings, not population statistics
   ([docs/assumptions.md](docs/assumptions.md)).
 - **No clinical pilot and no clinician validation yet.** Pathways and patient-message templates are pending
   clinical sign-off. The review template has not been filled in.
-- **The ladder reached 70.1% of reachable patients**, against a 90% target (T5: 625 of 892 cases with a valid
-  phone had at least one reminder or contact by Day 14). T1 and T2 were met by escalating to a supervisor, not
+- **The ladder reached 70.0% of reachable patients**, against a 90% target (T5: 625 of 893 cases with a valid
+  phone had at least one reminder or contact by Day 14; one of the 268 not reached is C-DEMO-14, held on
+  purpose by the consent gate). T1 and T2 were met by escalating to a supervisor, not
   by getting care done.
-- **The supervisor queue grows to 379 cases** on Day 14 with the ladder on (1 with it off): one person, no cap.
+- **The supervisor queue grows to 380 cases** on Day 14 with the ladder on (1 with it off): one person, no cap.
   Overdue cases stayed at 355 in both arms.
 - **Dashboard and Today numbers come from demo data**, including the seeded cohort and scripted stories, not
   from a real facility.
@@ -252,6 +295,7 @@ Dates are from `git log` (Manila time). The repo history starts on 2026-10-17.
 | 2026-11-09 | `0ea2942` | "Prepare for the call" AI draft on Vertex AI, with fact check and Use/Discard events |
 | 2026-11-14 | `d908191` | Ladder on/off targets written down before the comparison was run |
 | 2026-11-14 | `d565959`, `7685407` | 13 scripted demo stories, plain statuses, structured closure evidence, logged contact reveal, Today summary and search, dashboard, CSV import screen, patient phone page |
+| 2026-11-15 | `a9d131a`, `afbc55d` | After the 4 Nov webinar: content labels (recorded fact, rule result, AI-written), pass/hold checks with consent to contact (GATE-1), missing-information story C-DEMO-14, staff-only logged downloads, workflow diagram, WHO and DECIDE-AI mapping, pilot evidence plan |
 
 **Reused from InvoiceSentinel (the team's earlier project):** the stack and the deployment pattern: Next.js static
 export on Firebase Hosting, FastAPI on Cloud Run at min 0, Firestore, Gemini, Secret Manager, a budget alert, and
@@ -279,6 +323,16 @@ are JSON templates with one text per language, and the clinic phone number is a 
 Honest limits: today only English and Filipino template texts exist, and the list of supported languages is a
 constant in `imports/csv_validation.py`, so adding a language means adding translations (reviewed by native
 speakers) and one line of code. Nothing has been tested outside the Philippines.
+
+## Roadmap (not built)
+
+- **Health record integration:** Malaffi (Abu Dhabi's health information exchange), Oracle Health and Epic are
+  possible future integration targets, named in the 4 November webinar. LoopCloser has no integration with any
+  of them today; results come in through the CSV import.
+- **Consent:** today a yes/no flag with its source, recorded by staff. A real deployment needs the facility's
+  consent form and a legal review of local data-protection consent rules.
+- **Ladder fixes from the eval:** cap or batch supervisor escalations, and decide with a clinician whether an
+  approved reminder may go to unreviewed results near their deadline ([EVAL.md](EVAL.md)).
 
 ## Pilot and cost
 
@@ -404,6 +458,16 @@ project setup, billing and cost.
   and has My cases, a screening filter and find-by-case-id. Name search is deliberately not offered.
 - **Structured closure evidence (rule CLOSE-3).** Closing with evidence needs a visit date (not in the future,
   not before the case opened), the facility and a record number in a fixed format.
+- **Content labels.** Every case page has a legend and badges: **Recorded fact** (data on file), **Rule result**
+  (pathway, deadline, priority points, checks, ladder steps) and **AI-written** (the Gemini call guide). Timeline
+  events carry the same badge, and the downloads carry the same three kinds.
+- **Checks before contact (rule GATE-1).** Consent to contact, contact details, result on file, owner assigned and
+  no open red flag, each Pass or Hold with what is missing. Calls and SMS (including the automatic Day 4
+  reminder) are blocked while consent or a valid phone is missing; a declined consent blocks every contact,
+  including home visits. Owner and red-flag holds warn. Staff record consent with its source; it is an event.
+- **Downloads (rule PRIV-2).** Printable case summary (`/case/print`, browser Save as PDF) and the audit trail as
+  CSV or JSON (`/api/cases/{id}/export/...`). Staff roles only, logged as an event, participant id masked, no
+  names or phone numbers.
 - **Logged contact reveal (rule PRIV-1).** Names and phone numbers are hidden by default; pressing Show name and phone
   logs who saw which fields (never the values).
 - **Program dashboard** (`/dashboard`), **CSV import check** (`/import`) and the **patient's phone** (`/phone`,

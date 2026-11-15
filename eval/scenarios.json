@@ -5,8 +5,10 @@
   "owner": "demo-worker-01",
   "screened_days_ago": 0,
   "severity": "abnormal",
-  "language": "en"
+  "language": "en",
+  "contact_consent": "yes"
  },
+ "defaults_note": "contact_consent was added to the defaults when the consent gate (GATE-1) was built on 15 Nov 2026, so every case in this set has consent on file as before. No label was changed. GATE-1 itself is covered by api/tests/test_gates_and_export.py, not by this labeled set.",
  "scenarios": [
   {
    "id": "R01",
