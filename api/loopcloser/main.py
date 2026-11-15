@@ -1122,7 +1122,7 @@ def create_app(
 
     @app.post("/api/imports/validate")
     async def import_validate(request: Request, _: Principal = Depends(require(Perm.IMPORT_CSV))):
-        rep = validate_csv(await _csv_text(request))
+        rep = validate_csv(await _csv_text(request), today=today())
         preview = [
             {"line": r.line, "record_id": r.row.get("record_id"), "errors": r.errors, "warnings": r.warnings}
             for r in rep.rows
@@ -1233,7 +1233,7 @@ def create_app(
 
     @app.post("/api/imports/commit")
     async def import_commit(request: Request, p: Principal = Depends(require(Perm.IMPORT_CSV))):
-        rep = validate_csv(await _csv_text(request))
+        rep = validate_csv(await _csv_text(request), today=today())
         if rep.file_errors:
             raise HTTPException(422, "; ".join(rep.file_errors))
         return {**_open_from_rows(rep.valid_rows, p.actor, synthetic=False), "summary": rep.summary()}
@@ -1254,7 +1254,7 @@ def create_app(
         w = _csv.DictWriter(buf, fieldnames=list(cohort.rows[0].keys()))
         w.writeheader()
         w.writerows(cohort.rows)
-        rep = validate_csv(buf.getvalue())
+        rep = validate_csv(buf.getvalue(), today=today())
         res = _open_from_rows(rep.valid_rows, SYSTEM_ACTOR, synthetic=True, stories=True)
         return {"data_label": LABEL, "disclaimer": DISCLAIMER, **res, "validation": rep.summary()}
 
