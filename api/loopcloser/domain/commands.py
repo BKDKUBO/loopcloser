@@ -15,6 +15,10 @@ Guard rule ids (also listed in docs/guard-rules.md):
   CLOSE-2 Only coordinator or supervisor can close or sign off.
   CLOSE-3 Structured closure evidence needs a visit date (not in the future, not before the case opened),
           a facility, and a record number.
+  GATE-1  Pass/hold gates (domain/gates.py): calls and SMS are blocked while consent to contact or a valid
+          phone number is missing; every contact attempt is blocked if the patient declined contact.
+          Consent is recorded by a human staff member with its source, never inferred.
+  PRIV-2  Downloading a case summary or audit trail is staff-only and logged as an event.
   PRIV-1  Names and phone numbers are hidden on staff screens. Revealing them is a click by a human staff
           member and is logged as an event (which fields, never the values).
   MSG-3   Official patient messages must use an approved template (id, version, language). No free text, no AI text.
@@ -40,6 +44,7 @@ from ..store.base import CaseRepository
 from .case import CaseView, project
 from .errors import GuardViolation, NotFound
 from .events import SYSTEM_ACTOR, Actor, Event, EventType
+from .gates import CONSENT_VALUES
 from .priority import TIERS
 from .roles import CLOSE_SIGNOFF_ROLES, Role
 from .states import RED_FLAG_STATES, REQUIRED_FIELDS, CaseState, is_allowed
@@ -173,6 +178,9 @@ def open_case(
             "location": screening.get("location"),
             "age_band": screening.get("age_band"),
             "phone_valid": bool(screening.get("phone_valid", True)),
+            "contact_consent": screening.get("contact_consent")
+            if screening.get("contact_consent") in CONSENT_VALUES
+            else None,
         },
         rule_id=f"PATHWAY:{pathway.key}",
         fields_used=("screening_type", "result", "severity", "screened_at"),
@@ -485,6 +493,44 @@ def record_contact_reveal(
     b = _load(repo, case_id, now)
     b.add(EventType.CONTACT_REVEALED, actor, {"fields": list(fields)}, rule_id="PRIV-1")
     return b.commit()
+
+
+def record_consent(
+    repo: CaseRepository,
+    case_id: str,
+    *,
+    actor: Actor,
+    consent: str,
+    source: str,
+    now: datetime | None = None,
+) -> CaseView:
+    """Record the patient's consent to be contacted (rule GATE-1). A human staff member, with where it came
+    from (e.g. "in person at the home visit"). Never inferred by automation or AI."""
+    if not actor.is_human or actor.role not in STAFF_ROLES_FOR_CONTACT:
+        raise GuardViolation("Only care staff can record consent.", rule_id="GATE-1")
+    if consent not in CONSENT_VALUES:
+        raise GuardViolation("Consent must be yes or no.", rule_id="GATE-1")
+    if not source.strip():
+        raise GuardViolation("Say how consent was obtained (e.g. in person at the home visit).", rule_id="GATE-1")
+    b = _load(repo, case_id, now)
+    if b.view.state == CaseState.CLOSED:
+        raise GuardViolation("The case is closed.", rule_id="SM-1")
+    b.add(EventType.CONSENT_RECORDED, actor, {"consent": consent, "source": source.strip()[:200]}, rule_id="GATE-1")
+    return b.commit()
+
+
+EXPORT_KINDS = ("summary", "audit_csv", "audit_json")
+
+
+def record_export(repo: CaseRepository, case_id: str, *, actor: Actor, kind: str, now: datetime | None = None) -> None:
+    """Log a download of the case summary or audit trail (rule PRIV-2). Staff only; never changes the case."""
+    if not actor.is_human or actor.role == Role.PATIENT:
+        raise GuardViolation("Only staff can download case records.", rule_id="PRIV-2")
+    if kind not in EXPORT_KINDS:
+        raise GuardViolation("Unknown export.", rule_id="PRIV-2")
+    b = _load(repo, case_id, now)
+    b.add(EventType.CASE_EXPORTED, actor, {"kind": kind}, rule_id="PRIV-2")
+    b.commit()
 
 
 def add_note(repo: CaseRepository, case_id: str, *, actor: Actor, text: str, now: datetime | None = None) -> CaseView:

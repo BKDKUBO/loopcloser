@@ -52,6 +52,7 @@ def screening(**kw):
         "severity": "abnormal",
         "screened_at": "2026-10-10",
         "red_flag": False,
+        "contact_consent": "yes",
     }
     base.update(kw)
     return base

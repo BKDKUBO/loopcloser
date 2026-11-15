@@ -10,12 +10,12 @@ import logging
 import time
 import uuid
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from . import auth
@@ -23,12 +23,13 @@ from .ai.assist import AI_LABEL, PROMPT_VERSION, AIBackend, prepare_call, summar
 from .auth import Principal, require
 from .config import Config, get_config
 from .domain import commands as cmd
+from .domain import gates as gates_mod
 from .domain import indexing as idx
 from .domain import ladder as ladder_mod
 from .domain import priority as prio
 from .domain.case import CaseView
-from .domain.errors import DomainError
-from .domain.events import SYSTEM_ACTOR, Actor
+from .domain.errors import DomainError, GuardViolation
+from .domain.events import SYSTEM_ACTOR, Actor, Event, EventType
 from .domain.next_action import PLAIN_STATUSES, lost_contact, plain_status, recommend
 from .domain.roles import Perm, Role, has_perm
 from .domain.states import CaseState
@@ -53,6 +54,22 @@ def PHONE_OK(phone: str) -> bool:  # noqa: N802
     from .imports.csv_validation import PHONE_RE
 
     return bool(PHONE_RE.match(phone or ""))
+
+
+CONTENT_KINDS = {
+    "recorded_fact": "Recorded fact: data on file, entered or uploaded by a person",
+    "rule_result": "Rule result: a deterministic calculation, deadline or automated rule step",
+    "ai_written": "AI-written: a Gemini draft for staff; it never changes the case",
+}
+
+
+def content_kind(e: Event) -> str:
+    """Which of the three kinds of content an event is (shown on the case page and in every export)."""
+    if e.type in {EventType.AI_DRAFT_CREATED}:
+        return "ai_written"
+    if e.type == EventType.LADDER_STEP or e.actor.kind != "human":
+        return "rule_result"
+    return "recorded_fact"
 
 
 def mask_participant(pid: str) -> str:
@@ -85,6 +102,7 @@ class OpenCaseIn(BaseModel):
     language: str = "en"
     comorbidity: bool = False
     barriers: list[str] = Field(default_factory=list)
+    contact_consent: Literal["yes", "no"] | None = None  # None: not recorded, so calls and SMS hold (GATE-1)
 
 
 class AssignIn(BaseModel):
@@ -139,6 +157,11 @@ class CloseIn(BaseModel):
 
 class RevealIn(BaseModel):
     fields: list[str] = Field(default_factory=lambda: ["name", "phone"])
+
+
+class ConsentIn(BaseModel):
+    consent: Literal["yes", "no"]
+    source: str = Field(max_length=200)
 
 
 class NoteIn(BaseModel):
@@ -375,7 +398,9 @@ def create_app(
         d["plain_status_label"] = PLAIN_STATUSES[d["plain_status"]]
         d["lost_contact"] = lost_contact(v)
         d["days_to_due"] = (v.due_date - t).days if v.due_date else None
+        d["gates_on_hold"] = [g["id"] for g in gates_mod.holds(v)] if v.state != CaseState.CLOSED else []
         if detail:
+            d["gates"] = gates_mod.compute(v)
             d["ladder"] = ladder_mod.status(v, today(), steps)
             d["day"] = ladder_mod.day_of(v, today())
         return d
@@ -594,9 +619,17 @@ def create_app(
         payload = body.model_dump(mode="json", exclude={"target"}, exclude_none=True)
         return _out(cmd.transition(repo, case_id, body.target, actor=p.actor, payload=payload, now=now()), p)
 
+    def _check_contact_gates(v: CaseView, channel: str) -> None:
+        """Rule GATE-1: no patient contact on a channel while a gate that blocks it is on Hold."""
+        held = gates_mod.blocking(v, channel)
+        if held:
+            raise GuardViolation(
+                "On hold: " + " ".join(f"{g['label']}: {g['missing']}" for g in held), rule_id=gates_mod.RULE_ID
+            )
+
     @app.post("/api/cases/{case_id}/contact-attempts")
     def contact(case_id: str, body: ContactIn, p: Principal = Depends(require(Perm.CASE_CONTACT))):
-        _get_visible(case_id, p)
+        _check_contact_gates(_get_visible(case_id, p), body.channel)
         return _out(
             cmd.log_contact_attempt(
                 repo, case_id, channel=body.channel, result=body.result, actor=p.actor, settings=settings, now=now()
@@ -691,6 +724,137 @@ def create_app(
             "messages": msgs,
         }
 
+    @app.post("/api/cases/{case_id}/consent")
+    def consent(case_id: str, body: ConsentIn, p: Principal = Depends(require(Perm.CASE_CONTACT))):
+        """Record consent to contact, with its source (rule GATE-1). Logged as an event."""
+        _get_visible(case_id, p)
+        return _out(
+            cmd.record_consent(repo, case_id, actor=p.actor, consent=body.consent, source=body.source, now=now()),
+            p,
+            detail=True,
+        )
+
+    # -------------------------------------------------------------- downloads (staff only, logged: PRIV-2)
+
+    def _export_events(case_id: str, p: Principal, kind: str) -> tuple[CaseView, list[Event]]:
+        v = _get_visible(case_id, p)
+        cmd.record_export(repo, case_id, actor=p.actor, kind=kind, now=now())
+        return v, repo.load_events(case_id)
+
+    def _export_name(case_id: str, ext: str) -> dict[str, str]:
+        safe = "".join(ch for ch in case_id if ch.isalnum() or ch in "-_")
+        return {"Content-Disposition": f'attachment; filename="{safe}-audit-trail.{ext}"'}
+
+    def _export_payload(payload: dict[str, Any]) -> dict[str, Any]:
+        """Downloads mask the participant id and drop the patient's login id (files travel further than screens)."""
+        out = {k: val for k, val in payload.items() if k != "patient_uid"}
+        if isinstance(out.get("participant_id"), str):
+            out["participant_id"] = mask_participant(out["participant_id"])
+        return out
+
+    def _audit_rows(events: list[Event]) -> list[dict[str, Any]]:
+        return [
+            {
+                "seq": e.seq,
+                "at": e.at.isoformat(),
+                "type": e.type.value,
+                "content_kind": content_kind(e),
+                "actor_id": e.actor.id,
+                "actor_role": e.actor.role.value,
+                "actor_kind": e.actor.kind,
+                "rule_id": e.rule_id or "",
+                "payload": _export_payload(e.payload),
+            }
+            for e in events
+        ]
+
+    @app.get("/api/cases/{case_id}/export/audit.json")
+    def export_audit_json(case_id: str, p: Principal = Depends(require(Perm.EVENTS_READ))) -> JSONResponse:
+        v, events = _export_events(case_id, p, "audit_json")
+        body = {
+            "case_id": v.id,
+            "participant_id": mask_participant(v.participant_id),
+            "exported_at": datetime.now(UTC).isoformat(),
+            "exported_by": f"{p.uid} ({p.role.value})",
+            "data_label": "SIMULATED" if v.synthetic else None,
+            "note": "Append-only event log. Names and phone numbers are never in the log.",
+            "content_kinds": CONTENT_KINDS,
+            "events": _audit_rows(events),
+        }
+        return JSONResponse(body, headers=_export_name(case_id, "json"))
+
+    @app.get("/api/cases/{case_id}/export/audit.csv")
+    def export_audit_csv(case_id: str, p: Principal = Depends(require(Perm.EVENTS_READ))) -> Response:
+        import csv as _csv
+        import io
+        import json as _json
+
+        v, events = _export_events(case_id, p, "audit_csv")
+        buf = io.StringIO()
+        cols = ["seq", "at", "type", "content_kind", "actor_id", "actor_role", "actor_kind", "rule_id", "payload"]
+        w = _csv.DictWriter(buf, fieldnames=cols)
+        w.writeheader()
+        for row in _audit_rows(events):
+            # The payload is one JSON object per cell, so a cell never starts with a formula character.
+            w.writerow({**row, "payload": _json.dumps(row["payload"], ensure_ascii=False, sort_keys=True)})
+        return Response(buf.getvalue(), media_type="text/csv; charset=utf-8", headers=_export_name(case_id, "csv"))
+
+    @app.get("/api/cases/{case_id}/export/summary")
+    def export_summary(case_id: str, p: Principal = Depends(require(Perm.EVENTS_READ))) -> dict[str, Any]:
+        """Printable case summary. Every section says what kind of content it is: recorded fact, rule result,
+        or AI-written. The web app renders it on /case/print for the browser's Print or Save as PDF."""
+        v, events = _export_events(case_id, p, "summary")
+        d = _out(v, p, detail=True)
+        draft = _draft_out(cmd.latest_ai_draft(repo, case_id))
+        return {
+            "case_id": v.id,
+            "generated_at": datetime.now(UTC).isoformat(),
+            "generated_by": f"{p.uid} ({p.role.value})",
+            "data_label": "SIMULATED" if v.synthetic else None,
+            "content_kinds": CONTENT_KINDS,
+            "recorded_facts": {
+                "participant_id": d["participant_id"],
+                "screening_type": v.screening_type,
+                "screening_id": v.screening_id,
+                "severity": v.severity,
+                "language": v.language,
+                "owner": v.owner,
+                "contact_consent": v.contact_consent or "not recorded",
+                "valid_phone_on_file": v.phone_valid,
+                "contact_attempts": v.contact_attempts,
+                "reached_contacts": v.reached_contacts,
+                "barriers_open": v.barriers_open,
+                "appointment": v.appointment,
+                "closure_reason": v.closure_reason,
+                "closure_evidence": v.closure_evidence_detail,
+                "signed_off_by": v.signed_off_by,
+            },
+            "rule_results": {
+                "state": v.state.value,
+                "plain_status": d["plain_status_label"],
+                "pathway": f"{v.pathway_id} v{v.pathway_version} ({v.pathway_signoff_status})",
+                "due_date": v.due_date.isoformat() if v.due_date else None,
+                "days_to_due": d["days_to_due"],
+                "priority": d["priority"],
+                "recommended_action": d["recommended_action"],
+                "gates": d["gates"],
+                "ladder": d["ladder"],
+            },
+            "ai_written": (
+                {
+                    "label": draft["label"],
+                    "model": draft["model"],
+                    "verified": draft["verified"],
+                    "text": draft["text"],
+                    "decision": draft["decision"],
+                    "decided_by": draft["decided_by"],
+                }
+                if draft
+                else None
+            ),
+            "timeline": _audit_rows(events),
+        }
+
     @app.post("/api/cases/{case_id}/notes")
     def note(case_id: str, body: NoteIn, p: Principal = Depends(require(Perm.CASE_NOTE))):
         _get_visible(case_id, p)
@@ -759,6 +923,7 @@ def create_app(
     def message_send(case_id: str, body: MessageIn, p: Principal = Depends(require(Perm.MESSAGE_SEND))):
         """Simulated outbox: renders an approved template and logs it. Nothing is really sent."""
         v = _get_visible(case_id, p)
+        _check_contact_gates(v, body.channel)
         msg = _render(v, body)
         v = cmd.record_notification(
             repo,
@@ -1005,6 +1170,7 @@ def create_app(
                     "location": row.get("location"),
                     "age_band": row.get("age_band"),
                     "phone_valid": bool(PHONE_OK(row.get("phone", ""))),
+                    "contact_consent": row.get("consent") or None,
                 },
             )
             if synthetic:

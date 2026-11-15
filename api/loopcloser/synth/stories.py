@@ -145,6 +145,7 @@ def play_stories(
                 "location": st.get("location"),
                 "age_band": st.get("age_band"),
                 "phone_valid": bool(phone),
+                "contact_consent": st.get("consent", "yes"),
             },
         )
         by_day: dict[int, list[tuple]] = {}

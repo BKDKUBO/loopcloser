@@ -33,6 +33,7 @@ COLUMNS = [
     "language",
     "phone",
     "contact_pref",
+    "consent",
     "comorbidity",
     "screening_type",
     "result",
@@ -199,6 +200,9 @@ def generate(
                 "language": lang,
                 "phone": phone,
                 "contact_pref": rng.choice(["sms", "call", "chw_visit"]),
+                # SIMULATED: every generated row records consent, so the cohort (and the ladder eval) is
+                # unchanged. The missing-consent case is scripted demo story 14.
+                "consent": "yes",
                 "comorbidity": "yes" if rng.random() < 0.2 else "no",
                 "screening_type": stype,
                 "result": result,
@@ -264,7 +268,7 @@ def _edge_cases(rows: list[dict], anchor: date) -> list[dict]:
 
 # ---------------------------------------------------------------- scripted demo stories
 #
-# 13 hand-written SIMULATED cases with fictional names, so the demo can follow one patient at a time.
+# 14 hand-written SIMULATED cases with fictional names, so the demo can follow one patient at a time.
 # Each story has a "proves" line used in the README demo path. Days are counted from the day the
 # result was uploaded (Day 0). The player (synth/stories.py) replays every step through the real
 # domain commands, runs the escalation ladder for each simulated day, and back-dates the events, so
@@ -276,7 +280,9 @@ def _edge_cases(rows: list[dict], anchor: date) -> list[dict]:
 # · (day, "book", actor, appointment_day, clinic) · (day, "message", actor, template_id)
 # · (day, "visit_done", actor) · (day, "no_show", actor) · (day, "declined", actor, reason)
 # · (day, "barrier", actor, barrier) · (day, "red_flag", actor, code)
-# · (day, "close", actor, reason, evidence | None) · (day, "ladder",) runs the ladder at that point
+# · (day, "close", actor, reason, evidence | None)
+# Every story records consent to contact at screening ("consent": "yes") unless it says otherwise
+# ("consent": None means not recorded). · (day, "ladder",) runs the ladder at that point
 # of the day (otherwise it runs after the day's steps).
 # Actors: worker = demo-worker-01, chw = demo-worker-02 (community health worker),
 # coord = demo-coord-01, sup = demo-sup-01.
@@ -549,6 +555,24 @@ DEMO_STORIES: list[dict] = [
         "screened_days_ago": 62,
         "opened_days_ago": 12,
         "steps": [(1, "review", "coord"), (3, "call", "worker", "no_answer")],
+    },
+    {
+        "n": 14,
+        "name": "Rosario Dizon",
+        "consent": None,
+        "proves": "Missing information: consent to contact was not recorded at screening. The case holds "
+        "instead of acting: the Day 4 SMS reminder is held, Call and Message are blocked (rule GATE-1), and the "
+        "next action is to record consent in person. A community health worker visit is still allowed.",
+        "screening_type": "cervical",
+        "result": "abnormal",
+        "severity": "abnormal",
+        "language": "en",
+        "age_band": "40-49",
+        "location": "Site B",
+        "owner": "demo-worker-01",
+        "screened_days_ago": 6,
+        "opened_days_ago": 5,
+        "steps": [(1, "review", "coord")],
     },
 ]
 

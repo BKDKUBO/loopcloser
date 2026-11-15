@@ -47,6 +47,8 @@ class CaseView(BaseModel):
     location: str | None = None
     age_band: str | None = None
     phone_valid: bool = True
+    # Consent to be contacted: "yes", "no", or None (not recorded). From the upload or a staff entry, never AI.
+    contact_consent: str | None = None
     barriers_open: list[str] = Field(default_factory=list)
     no_show_count: int = 0
     reached_contacts: int = 0
@@ -93,6 +95,7 @@ def _apply(view: CaseView | None, ev: Event) -> CaseView:
             location=p.get("location"),
             age_band=p.get("age_band"),
             phone_valid=bool(p.get("phone_valid", True)),
+            contact_consent=p.get("contact_consent"),
             synthetic=bool(p.get("synthetic", False)),
             data_label=p.get("data_label"),
             opened_at=ev.at,
@@ -162,10 +165,13 @@ def _apply(view: CaseView | None, ev: Event) -> CaseView:
             if p.get("tier")
             else None
         )
+    elif ev.type == EventType.CONSENT_RECORDED:
+        v.contact_consent = p["consent"]
     elif ev.type == EventType.LADDER_STEP:
         if p["step"] not in v.ladder_steps:
             v.ladder_steps.append(p["step"])
-    # NOTIFICATION_STATUS, NOTE_ADDED, CONTACT_REVEALED and the AI_DRAFT_* audit events never change state.
+    # NOTIFICATION_STATUS, NOTE_ADDED, CONTACT_REVEALED, CASE_EXPORTED and the AI_DRAFT_* audit events never
+    # change state.
     v.updated_at = ev.at
     v.version = ev.seq
     return v

@@ -110,7 +110,7 @@ def run_case(
             continue
         action = step.label
         if step.id == "reminder":
-            if v.phone_valid:
+            if v.phone_valid and v.contact_consent == "yes":
                 lang = v.language if v.language in SUPPORTED_LANGUAGES else "en"
                 cmd.record_notification(
                     repo,
@@ -124,6 +124,12 @@ def run_case(
                     now=now,
                 )
                 action = f"Reminder sent by SMS ({lang}, simulated)"
+            elif v.contact_consent != "yes":
+                action = (
+                    "Patient declined contact: reminder held (rule GATE-1), a coordinator decides the next step"
+                    if v.contact_consent == "no"
+                    else "Consent to contact not recorded: reminder held (rule GATE-1), record consent first"
+                )
             else:
                 action = "No valid phone: reminder skipped, community health worker visit needed"
         elif step.id == "supervisor" and v.state != S.ESCALATED and is_allowed(v.state, S.ESCALATED):

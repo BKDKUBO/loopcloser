@@ -147,6 +147,11 @@ def validate_csv(text: str, *, today: date | None = None) -> ValidationReport:
         phone = row.get("phone", "")
         if "phone" in columns and not PHONE_RE.match(phone):
             r.warnings.append("no valid phone; use a call-back or community health worker visit")
+        consent = row.get("consent", "")
+        if consent and consent not in {"yes", "no"}:
+            r.errors.append(f"invalid consent '{consent}' (use yes, no or leave blank)")
+        elif not consent and sev != "normal":
+            r.warnings.append("consent to contact not recorded; calls and SMS hold until staff record it (GATE-1)")
         if sev == "normal":
             r.warnings.append("normal result; no follow-up case will be opened")
         report.rows.append(r)

@@ -52,6 +52,10 @@ class EventType(StrEnum):
     AI_DRAFT_DECISION = "ai_draft_decision"
     # Staff looked at the (SIMULATED) name and phone. Audit only: never changes the case.
     CONTACT_REVEALED = "contact_revealed"
+    # Staff recorded the patient's consent to be contacted (rule GATE-1). Changes the consent gate only.
+    CONSENT_RECORDED = "consent_recorded"
+    # Staff downloaded the case summary or audit trail (rule PRIV-2). Audit only: never changes the case.
+    CASE_EXPORTED = "case_exported"
 
 
 class Event(BaseModel):

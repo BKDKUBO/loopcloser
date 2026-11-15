@@ -35,6 +35,14 @@ def recommend(v: CaseView) -> dict[str, Any]:
         return {"label": label, "kind": "transition", "target": target.value if target else None}
     if not v.owner and v.state != S.CLOSED:
         return {"label": "Assign an owner", "kind": "assign", "target": None}
+    if v.state != S.CLOSED and v.contact_consent == "no":
+        return {
+            "label": "Patient declined contact: a coordinator decides the next step",
+            "kind": "consent",
+            "target": None,
+        }
+    if v.state != S.CLOSED and v.contact_consent is None and v.state not in {S.NEW_RESULT}:
+        return {"label": "Record consent to contact before calling or texting", "kind": "consent", "target": None}
     if v.barriers_open:
         return {"label": f"Resolve barrier: {', '.join(v.barriers_open)}", "kind": "barrier", "target": None}
     label, kind, target = _BY_STATE[v.state]

@@ -25,6 +25,7 @@ CASE = {
     "severity": "abnormal",
     "screened_at": "2026-10-10",
     "owner": "demo-worker-01",
+    "contact_consent": "yes",
 }
 
 
