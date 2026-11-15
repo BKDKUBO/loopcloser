@@ -4,6 +4,8 @@
 
 Team BKD KUBO · Future Health Digital Innovation Challenge · Challenge 05: Closing the Screening-to-Care Loop.
 
+Manuel III Ocaña, Product Lead & Solution Architect · Elson Mojica, Domain Lead (Collections & Follow-up) & QA.
+
 ## For judges: start here
 
 | | |
@@ -12,6 +14,8 @@ Team BKD KUBO · Future Health Digital Innovation Challenge · Challenge 05: Clo
 | **Video (under 3 min)** | ⚠️ PLACEHOLDER: video link to be added by the team |
 | **Pitch deck** | ⚠️ PLACEHOLDER: deck link to be added by the team |
 | **Measured results** | [EVAL.md](EVAL.md): 55 of 55 labeled synthetic cases follow the published rules, 0 false positives, 0 false negatives |
+| **Judging criteria** | [How LoopCloser meets the judging criteria](#how-loopcloser-meets-the-judging-criteria) |
+| **Assumptions and limitations** | [Assumptions and limitations](#assumptions-and-limitations); fuller notes in [docs/assumptions-and-limitations.md](docs/assumptions-and-limitations.md) |
 
 > **First load can take about 10 seconds.** The API scales to zero when nobody is using it, so it costs nothing at
 > idle. After the first request it answers in well under a second. All data is **SIMULATED** and fictional.
@@ -46,6 +50,102 @@ timeline is real events, not pasted text. Type the case id into **Find a case** 
    **Import** (CSV check before anything is saved).
 
 Screenshots of this path: [docs/screenshots/v2/](docs/screenshots/v2/).
+
+## How LoopCloser meets the judging criteria
+
+These are the six official Future Health parameters, as read out in Hack2skill's webinar on 4 November 2026.
+Each subsection points to evidence already in this repo. Assumptions and limitations that affect a score are
+collected in the next section.
+
+### 1. Health impact and clinical relevance
+
+LoopCloser is built for Challenge 05: Closing the Screening-to-Care Loop. It is a care-continuity system for
+the nurse or coordinator at a rural health unit who has abnormal results and no way to see who has been reached,
+booked, or lost. The Philippine follow-up gap is cited, not estimated, in [The problem](#the-problem): 34% of
+adults have hypertension and 49% of them did not know it (PRESYON-5); only 43% returned after screening in the
+DOH-supported CLAMS project; 73% of women with an abnormal result never returned in the Santo Tomas, Laguna
+audit. What the product does for that worker (an owner and a deadline, who to call first, automatic escalation)
+is described there.
+
+What we do not claim: improved clinical outcomes, or that a clinician has signed off the pathways. The review
+template is in [docs/clinical-review.md](docs/clinical-review.md); it is not filled in yet. All demo cases are
+fictional, which the webinar said is acceptable.
+
+### 2. Technical depth and architecture
+
+The system is event-sourced: an append-only event log is the source of truth, with rebuildable case projections,
+versioned hash-locked pathways, a published priority points table, guard rules, and an escalation ladder. See
+[Architecture](#architecture) and [docs/guard-rules.md](docs/guard-rules.md).
+
+Measured results in [EVAL.md](EVAL.md): 55 of 55 labeled synthetic cases follow the published rules (0 false
+positives, 0 false negatives), including guard rules 26/26. The same eval includes a ladder-on vs ladder-off
+comparison on 1,018 synthetic cases (targets written in commit `d908191` before the run): T1 unaccountable and
+T2 silently overdue both went to 0; T3 (177 unowned) and T4 (355 overdue) were unchanged, as targeted; T5 missed
+(see [Assumptions and limitations](#assumptions-and-limitations)). API tests on this branch: 142 passed, 3
+skipped (they need the Firestore emulator, which needs Java); `make test`.
+
+### 3. Working solution and demonstration quality
+
+Live demo: https://loopcloser-bkdkubo.web.app (Demo mode, no sign-in). A demo video is still a placeholder in
+this README and the deck; the official submission pack for 20 November asks for one, along with the live link
+and this documentation. The 13 scripted demo stories and the click path are in
+[Demo path](#demo-path-13-scripted-patients-no-sign-in). Screenshots of that path:
+[docs/screenshots/v2/](docs/screenshots/v2/) (14 images, including Today, the lead case with closure evidence,
+blocked close and contact reveal, Prepare for the call, a red-flag case, CSV import, the program dashboard and
+the patient's phone). The live site still runs the earlier build until `finalist-v2` is redeployed.
+
+### 4. Responsible AI, safety and data governance
+
+LoopCloser is not a diagnostic AI. Rules decide the next action, owner, priority and deadline; automation does
+not contact a patient until a human has reviewed the result (ladder Day 1 is human review; the reminder step
+only runs for reviewed or notified cases). People close cases (reason plus evidence or sign-off; the API
+refuses otherwise, rules CLOSE-1, CLOSE-3). Red flags stop automation (RF-1, RF-2). Names and phones are hidden
+until a logged reveal (PRIV-1). Official patient messages are approved templates only; Gemini never sends them
+(MSG-3). AI only drafts a call guide for staff, from masked facts, with every number and date verified; drafts
+never change case state. See [The safety line](#the-safety-line). No real patient data is in this demo; all
+cases are labeled SIMULATED.
+
+### 5. Scalability and deployment readiness
+
+The app is already deployed on Google Cloud (Cloud Run in asia-southeast1, Firestore, Firebase Hosting and Auth,
+Vertex AI, Cloud Logging). Default scale is min 0, max 1 instance, so idle cost is zero, and a US$5/month budget
+alert is in place. Demo traffic is expected at about US$0 to 2 per month. The
+[production-readiness checklist](#production-readiness-checklist) covers security, shipping, speed, traffic and
+survival. Country-specific setup (pathways, ladder days, message templates) is configuration, not code; see
+[Beyond the Philippines](#beyond-the-philippines). Honest limits are listed there: only English and Filipino
+templates exist, and nothing has been tested outside the Philippines.
+
+### 6. Commercial viability and path to pilot
+
+A 90-day pilot at one rural health unit is proposed, not agreed; no facility has signed up, and pathways still
+need clinical sign-off before real patients. Who could pay after a pilot is listed as options only (the LGU or
+RHU operating budget, or PhilHealth); no discussion has taken place. Cost per facility per month at list prices:
+about US$0.34 at 100 abnormal results, about US$0.85 at 300. SMS is not included (sending is simulated; no
+provider is chosen yet). Full math: [Pilot and cost](#pilot-and-cost).
+
+## Assumptions and limitations
+
+Fuller write-up: [docs/assumptions-and-limitations.md](docs/assumptions-and-limitations.md).
+
+- **All demo cases are synthetic.** The seed is 1,000 generated patients plus 13 hand-written stories, every row
+  labeled SIMULATED. Injected failure rates are team test settings, not population statistics
+  ([docs/assumptions.md](docs/assumptions.md)).
+- **No clinical pilot and no clinician validation yet.** Pathways and patient-message templates are pending
+  clinical sign-off. The review template has not been filled in.
+- **The ladder reached 70.1% of reachable patients**, against a 90% target (T5: 625 of 892 cases with a valid
+  phone had at least one reminder or contact by Day 14). T1 and T2 were met by escalating to a supervisor, not
+  by getting care done.
+- **The supervisor queue grows to 379 cases** on Day 14 with the ladder on (1 with it off): one person, no cap.
+  Overdue cases stayed at 355 in both arms.
+- **Dashboard and Today numbers come from demo data**, including the seeded cohort and scripted stories, not
+  from a real facility.
+- **SMS cost is not priced.** Sending is simulated; no SMS provider is chosen yet, and SMS would likely cost
+  more than the Google Cloud figures above.
+- **A human reviews each result before any patient contact.** Automation does not message a patient until a
+  human has reviewed the result. If nobody reviews it, the ladder makes the case visible to a supervisor but
+  does not contact the patient.
+- The labeled eval is a conformance test against our own rules, not clinical accuracy. We do not claim improved
+  outcomes.
 
 ## The problem
 
@@ -388,6 +488,6 @@ web/            Next.js static app (Today, case, dashboard, import, phone, pathw
 firestore-tests/ security rules tests (emulator)
 firestore.rules, firestore.indexes.json, firebase.json
 deploy/         project.env, project setup + deploy scripts (dry run by default), Cloud Run service
-docs/           guard rules, clinical review template, backup plan, simulation assumptions, deploy and approval plans
+docs/           guard rules, clinical review template, assumptions and limitations, backup plan, simulation assumptions, deploy and approval plans
 eval/           labeled synthetic scenarios and the evaluation runner
 ```

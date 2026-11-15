@@ -1,5 +1,7 @@
 # Simulation assumptions (draft)
 
+The challenge submission's assumptions and limitations (synthetic cases, no pilot, ladder misses, unpriced SMS, and so on) are in [assumptions-and-limitations.md](assumptions-and-limitations.md).
+
 All outputs from the synthetic cohort and the simulation are **SIMULATED, not clinical evidence**.
 We do not reuse any number from the external reviews. Every figure in the demo comes from our own runs.
 
