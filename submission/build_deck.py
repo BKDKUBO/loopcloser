@@ -87,7 +87,126 @@ def content_slide(title, bullets, img=None, kicker=None, note=None, size=None):
         para.level = 0
         _run(para, ("" if placeholder else "\u2022 ") + b, font, RED if placeholder else DARK, bold=placeholder)
     if img:
-        s.shapes.add_picture(SCREENSHOTS + img, Inches(7.05), Inches(body_top), width=Inches(5.7))
+        path = img if img.startswith("/") else SCREENSHOTS + img
+        s.shapes.add_picture(path, Inches(7.05), Inches(body_top), width=Inches(5.7))
+    return s
+
+
+def _arrow(slide, x1, y1, x2, y2, color=MUTED, dashed=False, width=1.75):
+    from pptx.enum.shapes import MSO_CONNECTOR
+    from lxml import etree
+
+    c = slide.shapes.add_connector(MSO_CONNECTOR.STRAIGHT, Inches(x1), Inches(y1), Inches(x2), Inches(y2))
+    c.line.color.rgb = color
+    c.line.width = Pt(width)
+    ln = c.line._get_or_add_ln()
+    if dashed:
+        dash = etree.SubElement(ln, qn("a:prstDash"))
+        dash.set("val", "dash")
+    tail = etree.SubElement(ln, qn("a:tailEnd"))
+    tail.set("type", "triangle")
+    tail.set("w", "med")
+    tail.set("len", "med")
+    return c
+
+
+KIND_STYLE = {
+    # kind: (fill, line, label)
+    "fact": (RGBColor(0xEC, 0xFD, 0xF5), RGBColor(0x05, 0x96, 0x69), "RECORDED FACT"),
+    "rule": (RGBColor(0xEF, 0xF6, 0xFF), RGBColor(0x25, 0x63, 0xEB), "RULE RESULT"),
+    "human": (RGBColor(0xFF, 0xFB, 0xEB), RGBColor(0xB4, 0x53, 0x09), "A PERSON DECIDES"),
+    "ai": (RGBColor(0xFA, 0xF5, 0xFF), RGBColor(0x7E, 0x22, 0xCE), "AI-WRITTEN (draft only)"),
+    "hold": (RGBColor(0xFE, 0xF2, 0xF2), RGBColor(0xB9, 0x1C, 0x1C), "HELD"),
+}
+
+
+def _box(slide, left, top, width, height, title, body, kind, dashed=False):
+    fill, line, label = KIND_STYLE[kind]
+    b = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(left), Inches(top), Inches(width), Inches(height))
+    b.adjustments[0] = 0.1
+    b.fill.solid()
+    b.fill.fore_color.rgb = fill
+    b.line.color.rgb = line
+    b.line.width = Pt(2)
+    if dashed:
+        from lxml import etree
+
+        dash = etree.SubElement(b.line._get_or_add_ln(), qn("a:prstDash"))
+        dash.set("val", "dash")
+    tf = b.text_frame
+    tf.word_wrap = True
+    tf.auto_size = None
+    tf.vertical_anchor = MSO_ANCHOR.TOP
+    for m in ("margin_left", "margin_right"):
+        setattr(tf, m, Inches(0.08))
+    tf.margin_top = Inches(0.06)
+    p = tf.paragraphs[0]
+    p.text = ""
+    p.alignment = PP_ALIGN.LEFT
+    _run(p, title, 13, DARK, bold=True)
+    p2 = tf.add_paragraph()
+    p2.text = ""
+    _run(p2, body, 11, MUTED)
+    p3 = tf.add_paragraph()
+    p3.text = ""
+    _run(p3, label, 10, line, bold=True)
+    return b
+
+
+def workflow_slide():
+    """Each step of the workflow and exactly where AI sits (same content as the README mermaid diagram)."""
+    s = blank()
+    tf = add_textbox(s, 0.5, 0.24, 12.3, 0.26)
+    p = tf.paragraphs[0]
+    p.text = ""
+    _run(p, "How it works", 12, TEAL, bold=True)
+    tf = add_textbox(s, 0.5, 0.48, 12.3, 0.6)
+    p = tf.paragraphs[0]
+    p.text = ""
+    _run(p, "Each step, and exactly where AI sits: drafting only. People decide.", 28, DARK, bold=True)
+
+    w, h, gap = 2.75, 1.45, 0.42
+    x0, y1, y2 = 0.5, 1.5, 4.25
+    xs = [x0 + i * (w + gap) for i in range(4)]
+    _box(s, xs[0], y1, w, h, "1. Result uploaded", "CSV import, checked row by row before anything is saved", "fact")
+    _box(s, xs[1], y1, w, h, "2. Rules route it", "Versioned pathway sets next action and deadline; published points set priority", "rule")
+    _box(s, xs[2], y1, w, h, "3. A person reviews the result", "Nothing reaches the patient before this (ladder Day 1)", "human")
+    _box(s, xs[3], y1, w, h, "4. Checks before contact", "Consent, phone, result on file, owner, red flag: each Pass or Hold (GATE-1)", "rule")
+    for i in range(3):
+        _arrow(s, xs[i] + w, y1 + h / 2, xs[i + 1], y1 + h / 2)
+
+    # Hold branch, between the rows, to the left of the Pass arrow
+    hold_x, hold_y, hold_w, hold_h = xs[2] + 0.2, y1 + h + 0.15, w + 0.05, 1.12
+    _box(s, hold_x, hold_y, hold_w, hold_h, "Hold: no call, no SMS",
+         "Staff record what is missing; the checks run again (demo: C-DEMO-14)", "hold")
+    _arrow(s, xs[3] + 0.35, y1 + h, hold_x + hold_w, hold_y + hold_h / 2, color=RED)
+
+    # Row 2, right to left: 5, 6, 7
+    x5, x6, x7 = xs[3], xs[2], xs[1]
+    _box(s, x5, y2 + 0.15, w, h, "5. Staff contact the patient", "Call, approved SMS template, or home visit. Pass only.", "human")
+    _box(s, x6, y2 + 0.15, w, h, "6. Booked, visit recorded", "Appointment and visit are events in the log", "fact")
+    _box(s, x7, y2 + 0.15, w, h, "7. Closed by a coordinator", "Reason plus evidence (visit date, facility, record) or sign-off", "human")
+    _arrow(s, xs[3] + w / 2, y1 + h, xs[3] + w / 2, y2 + 0.15, color=RGBColor(0x05, 0x96, 0x69))
+    tfp = add_textbox(s, xs[3] + w / 2 + 0.08, y1 + h + 0.5, 1.4, 0.3)
+    _run(tfp.paragraphs[0], "All pass", 12, RGBColor(0x05, 0x96, 0x69), bold=True)
+    _arrow(s, x5, y2 + 0.15 + h / 2, x6 + w, y2 + 0.15 + h / 2)
+    _arrow(s, x6, y2 + 0.15 + h / 2, x7 + w, y2 + 0.15 + h / 2)
+
+    # AI box: the only AI in the product, feeding step 5 as a draft
+    _box(s, x0, y2 + 0.15, w, h + 0.2, "Optional call guide",
+         "Gemini drafts it for staff from masked facts; every number and date is checked. Use or Discard is logged.",
+         "ai", dashed=True)
+    _arrow(s, x0 + w / 2, y2 + 0.15, x0 + w / 2, y2 - 0.25, color=RGBColor(0x7E, 0x22, 0xCE), dashed=True)
+    tfa = add_textbox(s, x0, y2 - 0.75, w + 0.4, 0.5)
+    _run(tfa.paragraphs[0], "read before the call (step 5); never sent, never changes the case", 11,
+         RGBColor(0x7E, 0x22, 0xCE), bold=True)
+
+    tf = add_textbox(s, 0.5, 6.45, 12.3, 0.8)
+    p = tf.paragraphs[0]
+    p.text = ""
+    _run(p, "Also running: the escalation ladder (Day 2 to 14: reminder, which is gated; home visit; supervisor) and red "
+         "flags, which stop all automation until a person takes over. The case page labels every item as Recorded "
+         "fact, Rule result or AI-written.", 13, MUTED)
     return s
 
 
@@ -112,32 +231,32 @@ def criteria_map_slide():
         (
             "1",
             "Health impact and clinical relevance",
-            "Slides 3\u20134. Cited Philippine follow-up gap. No claim of improved outcomes, and no clinician sign-off yet.",
+            "Slides 4\u20135. Cited Philippine follow-up gap. No claim of improved outcomes, and no clinician sign-off yet.",
         ),
         (
             "2",
             "Technical depth and architecture",
-            "Slide 8. Event-sourced cases, versioned pathways, 55/55 rule eval, ladder on vs off.",
+            "Slide 9. Event-sourced cases, versioned pathways, 55/55 rule eval, ladder on vs off.",
         ),
         (
             "3",
             "Working solution and demonstration quality",
-            "Slide 5. Live demo and 13 scripted cases, with screenshots. Demo video still a placeholder.",
+            "Slide 6. Live demo and 14 scripted cases, with screenshots. Demo video still a placeholder.",
         ),
         (
             "4",
             "Responsible AI, safety and data governance",
-            "Slides 6\u20137. Rules decide. AI drafts only, for staff. A human reviews a result before any patient contact.",
+            "Slides 2, 7\u20138. Rules decide; AI drafts only, for staff. Content labels and pass/hold checks. WHO and DECIDE-AI mapping.",
         ),
         (
             "5",
             "Scalability and deployment readiness",
-            "Slide 9. Live on Google Cloud, min 0 / max 1. Demo about US$0 to 2 per month.",
+            "Slide 10. Live on Google Cloud, min 0 / max 1. Demo about US$0 to 2 per month.",
         ),
         (
             "6",
             "Commercial viability and path to pilot",
-            "Slide 10. A 90-day RHU pilot is proposed, not agreed. About US$0.34\u20130.85 per facility per month.",
+            "Slide 11. A 90-day RHU pilot is proposed, not agreed; evidence plan written. About US$0.34\u20130.85 per facility per month.",
         ),
     ]
 
@@ -191,7 +310,7 @@ def criteria_map_slide():
     p.text = ""
     _run(
         p,
-        "Assumptions and limitations are on slide 11. Live demo, GitHub repo and the demo-video placeholder are on slide 12. "
+        "Assumptions and limitations are on slide 12. Live demo, GitHub repo and the demo-video placeholder are on slide 13. "
         "Technical documentation is in the public repo.",
         13,
         MUTED,
@@ -210,10 +329,13 @@ content_slide(
     img="02-today-supervisor.png",
 )
 
-# 2. Criteria map
+# 2. Workflow: each step and where AI sits
+workflow_slide()
+
+# 3. Criteria map
 criteria_map_slide()
 
-# 3. Criterion 1 \u2014 problem
+# 4. Criterion 1 \u2014 problem
 content_slide(
     "The problem",
     [
@@ -228,7 +350,7 @@ content_slide(
     size=16,
 )
 
-# 4. Criterion 1 continued
+# 5. Criterion 1 continued
 content_slide(
     "Who it is for",
     [
@@ -239,11 +361,11 @@ content_slide(
     kicker="Criterion 1 \u00b7 Health impact and clinical relevance",
 )
 
-# 5. Criterion 3
+# 6. Criterion 3
 content_slide(
     "Working solution",
     [
-        "Live demo: https://loopcloser-bkdkubo.web.app (Demo mode, no sign-in). Thirteen scripted stories (C-DEMO-01 to C-DEMO-13); screenshots in docs/screenshots/v2/.",
+        "Live demo: https://loopcloser-bkdkubo.web.app (Demo mode, no sign-in). Fourteen scripted stories (C-DEMO-01 to C-DEMO-14); screenshots in docs/screenshots/v2/.",
         "Today view: four lanes (needs action, overdue, waiting for patient, recently completed), highest priority first.",
         "\"Why this priority?\": every rule that fired, with its points. Escalation ladder: reminder, then community health worker, then supervisor.",
         "Timeline: every change is an event with the person, role and the rule that allowed it.",
@@ -252,21 +374,23 @@ content_slide(
     kicker="Criterion 3 \u00b7 Working solution and demonstration quality",
 )
 
-# 6. Criterion 4
+# 7. Criterion 4
 content_slide(
     "The safety line",
     [
-        "Rules decide (versioned, cited pathways; published points table; no ML in any decision).",
-        "A human reviews each result before any patient contact. Automation can only escalate or ask for human review.",
-        "People close (reason plus evidence or sign-off; API refuses otherwise, rules CLOSE-1 and CLOSE-3).",
-        "Red flags stop automation until a person resolves them.",
-        "AI only drafts, for staff. Not a diagnostic AI.",
+        "Rules decide; a human reviews each result before any patient contact; people close with evidence or sign-off (CLOSE-1, CLOSE-3).",
+        "Checks before contact: consent, phone, result on file, owner, red flag, each Pass or Hold. Calls and SMS are blocked on Hold (GATE-1). Demo: C-DEMO-14 (right).",
+        "Every item on a case is labeled Recorded fact, Rule result or AI-written. Staff can download the summary and audit trail; downloads are logged.",
+        "Red flags stop automation. AI only drafts, for staff. Not a diagnostic AI.",
+        "Mapped to WHO's six AI-for-health principles and DECIDE-AI (docs/frameworks.md): a self-assessment, not an external review.",
         "Honest note: all pathways pending clinical sign-off; the team has no clinician yet.",
     ],
+    img="/workspace/loopcloser/submission/assets/case-gates-on-hold.png",
     kicker="Criterion 4 \u00b7 Responsible AI, safety and data governance",
+    size=15,
 )
 
-# 7. Criterion 4 continued
+# 8. Criterion 4 continued
 content_slide(
     "Where AI helps",
     [
@@ -279,21 +403,21 @@ content_slide(
     kicker="Criterion 4 \u00b7 Responsible AI, safety and data governance",
 )
 
-# 8. Criterion 2
+# 9. Criterion 2
 content_slide(
     "Technical depth: measured, not estimated",
     [
         "55 of 55 labeled synthetic cases correct, 0 false positives, 0 false negatives. Guard rules 26/26: 0 unsafe actions allowed, 0 safe actions blocked.",
         "A conformance test against our own rules, not clinical accuracy. The eval caught 8 failures when two bugs were deliberately injected.",
-        "Event-sourced cases, versioned hash-locked pathways, a published priority table, and an escalation ladder. API tests: 142 passed, 3 skipped (they need the Firestore emulator).",
-        "Ladder on vs off, 1,018 synthetic cases, Day 14 (targets written before the run): T1 unaccountable and T2 silently overdue both went to 0; T3 and T4 unchanged, as targeted.",
-        "T5 missed: 70.1% of reachable patients contacted, against a 90% target. The supervisor queue grew from 1 case to 379 (one person, no cap).",
+        "Event-sourced cases, versioned hash-locked pathways, a published priority table, and an escalation ladder. API tests: 154 passed, 3 skipped (they need the Firestore emulator); web tests: 18 passed.",
+        "Ladder on vs off, 1,019 synthetic cases, Day 14 (targets written before the run): T1 unaccountable and T2 silently overdue both went to 0; T3 and T4 unchanged, as targeted.",
+        "T5 missed: 70.0% of reachable patients contacted, against a 90% target. The supervisor queue grew from 1 case to 380 (one person, no cap).",
     ],
     kicker="Criterion 2 \u00b7 Technical depth and architecture",
     size=17,
 )
 
-# 9. Criterion 5
+# 10. Criterion 5
 content_slide(
     "Built on Google Cloud",
     [
@@ -301,11 +425,12 @@ content_slide(
         "Default scale min 0, max 1 instance. Demo cost about US$0 to 2 per month; US$5 budget alert. About US$0.00002 database cost per patient lifecycle (14 writes, about 35 reads).",
         "Country setup (pathways, ladder days, message templates) is configuration, not code.",
         "Honest limits: only English and Filipino templates exist, and nothing has been tested outside the Philippines.",
+        "Future integration targets: Malaffi, Oracle Health and Epic. No integration exists today; results come in by CSV.",
     ],
     kicker="Criterion 5 \u00b7 Scalability and deployment readiness",
 )
 
-# 10. Criterion 6
+# 11. Criterion 6
 content_slide(
     "A path to a pilot",
     [
@@ -313,20 +438,20 @@ content_slide(
         "[TEAM TO CONFIRM any pilot partner before naming one]",
         "Cost per facility per month at Google Cloud list prices: about US$0.34 at 100 abnormal results, about US$0.85 at 300. SMS is not included (sending is simulated; no provider is chosen yet).",
         "Who could pay, as options only: the LGU or RHU operating budget, or PhilHealth. No discussion has taken place with either.",
-        "Optional next step: Model Armor screening of AI prompts and drafts.",
+        "Evidence plan (a plan, not done): first compare outputs against cases a clinician already knows, then measure contact, completion, holds and AI draft use (docs/pilot-evidence-plan.md).",
     ],
     kicker="Criterion 6 \u00b7 Commercial viability and path to pilot",
     size=17,
 )
 
-# 11. Assumptions
+# 12. Assumptions
 content_slide(
     "Assumptions and limitations",
     [
-        "All demo cases are synthetic (1,000 generated patients plus 13 scripted stories, labeled SIMULATED). Fictional cases are accepted for this challenge; they are not clinical evidence.",
+        "All demo cases are synthetic (1,000 generated patients plus 14 scripted stories, labeled SIMULATED). Fictional cases are accepted for this challenge; they are not clinical evidence.",
         "No clinical pilot and no clinician validation yet. Pathways are pending sign-off.",
-        "Ladder comparison, Day 14, 1,018 synthetic cases: 70.1% of reachable patients contacted, against a 90% target (T5).",
-        "The supervisor queue grows to 379 cases with the ladder on (1 with it off): one person, no cap. Overdue cases stayed at 355 in both arms.",
+        "Ladder comparison, Day 14, 1,019 synthetic cases: 70.0% of reachable patients contacted, against a 90% target (T5).",
+        "The supervisor queue grows to 380 cases with the ladder on (1 with it off): one person, no cap. Overdue cases stayed at 355 in both arms.",
         "Dashboard and Today numbers come from demo data, not a real facility.",
         "SMS cost is not priced. Sending is simulated; no provider is chosen yet.",
         "A human reviews each result before any patient contact. If nobody reviews a result, the ladder makes it visible but does not message the patient.",
@@ -335,7 +460,7 @@ content_slide(
     size=16,
 )
 
-# 12. Team
+# 13. Team
 def team_slide():
     s = blank()
     tf = add_textbox(s, 0.6, 0.28, 12.1, 0.64)
