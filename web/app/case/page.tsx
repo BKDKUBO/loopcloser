@@ -13,6 +13,7 @@ import { PriorityBadge, WhyPriority } from "@/components/Priority";
 import { RequireRole } from "@/components/RequireRole";
 import { RevealContact } from "@/components/RevealContact";
 import { SafetyLine } from "@/components/SafetyLine";
+import { SlotPicker } from "@/components/SlotPicker";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import {
@@ -83,8 +84,6 @@ function NextActionPanel({ c, onChange }: { c: CaseView; onChange: (c: CaseView)
   const s = useSession();
   const { run, busy, error, notice } = useCaseAction(onChange);
   const [reason, setReason] = useState("");
-  const [date, setDate] = useState(c.due_date ?? "");
-  const [clinic, setClinic] = useState("Site A clinic");
   const ra = c.recommended_action;
   const isLead = s.role === "coordinator" || s.role === "supervisor";
   const t = (target: string, extra: Record<string, unknown> = {}, ok = "Done.") =>
@@ -109,12 +108,7 @@ function NextActionPanel({ c, onChange }: { c: CaseView; onChange: (c: CaseView)
             </ConfirmButton>
           )}
           {(ra?.target === "action_scheduled" || ["understanding_confirmed", "rescheduled", "no_show"].includes(c.state)) && (
-            <fieldset><legend>Book appointment (simulated slots)</legend>
-              <label>Date <input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></label>{" "}
-              <label>Clinic <input value={clinic} onChange={(e) => setClinic(e.target.value)} /></label>{" "}
-              <ConfirmButton primary disabled={busy || !date} confirm={`Book ${date} at ${clinic}?`}
-                onConfirm={() => t("action_scheduled", { appointment: { date, clinic } }, "Appointment booked.")}>Book</ConfirmButton>
-            </fieldset>
+            <SlotPicker c={c} run={run} busy={busy} />
           )}
           {ra?.kind === "close" && isLead && <CloseWithEvidence c={c} run={run} busy={busy} />}
           {ra?.kind === "consent" && <p className="pending">On hold until consent to contact is recorded. Use
@@ -254,6 +248,16 @@ function CaseDetail() {
         {c.last_sms_reply && !c.sms_opt_out && <span className="badge">Last SMS reply: {c.last_sms_reply.keyword} (simulated)</span>}
         {c.appointment?.confirmed_by_patient && c.state === "action_scheduled" && <span className="badge">Appointment confirmed by the patient (SMS YES)</span>}
       </p>
+      {c.appointment && ["action_scheduled", "rescheduled", "no_show", "visit_completed"].includes(c.state) && (
+        <p className="small"><KindBadge kind="fact" />{" "}
+          <strong>{c.state === "action_scheduled" ? "Appointment" : "Last appointment"}:</strong> {c.appointment.date}
+          {c.appointment.time ? ` ${c.appointment.time}` : ""} at {c.appointment.clinic}
+          {c.appointment.slot_id ? " (simulated slot)" : ""}
+          {c.appointment.fhir && (
+            <details><summary>FHIR R4 Appointment (stored on the case, not sent)</summary>
+              <pre className="small" style={{ whiteSpace: "pre-wrap" }}>{JSON.stringify(c.appointment.fhir, null, 2)}</pre></details>)}
+        </p>
+      )}
       {src?.kind === "fhir_r4_bundle" && (
         <p className="small"><KindBadge kind="fact" /> <strong>Received as a FHIR R4 Bundle</strong> (pasted or sample, no live EHR):{" "}
           <code>{src.resource}</code>{src.code ? <> · {src.code}{src.display ? ` (${src.display})` : ""}</> : null}

@@ -58,10 +58,12 @@ export interface CaseView {
   synthetic: boolean;
   data_label: string | null;
   updated_at: string | null;
+  version?: number;
   data_quality: string[];
   language?: string;
   barriers_open?: string[];
-  appointment?: { date?: string; clinic?: string; confirmed_by_patient?: string; slot_id?: string; time?: string } | null;
+  appointment?: { date?: string; clinic?: string; confirmed_by_patient?: string; slot_id?: string; time?: string;
+    simulated?: boolean; fhir?: Record<string, unknown> } | null;
   ladder_steps?: string[];
   priority?: Priority;
   recommended_action?: RecommendedAction;

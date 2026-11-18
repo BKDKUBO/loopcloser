@@ -27,6 +27,7 @@ from .domain import gates as gates_mod
 from .domain import indexing as idx
 from .domain import ladder as ladder_mod
 from .domain import priority as prio
+from .domain import scheduling
 from .domain.case import CaseView
 from .domain.errors import DomainError, GuardViolation
 from .domain.events import SYSTEM_ACTOR, Actor, Event, EventType
@@ -163,6 +164,11 @@ class RevealIn(BaseModel):
 class ConsentIn(BaseModel):
     consent: Literal["yes", "no"]
     source: str = Field(max_length=200)
+
+
+class BookIn(BaseModel):
+    slot_id: str = Field(max_length=60)
+    reason: str | None = Field(default=None, max_length=200)
 
 
 class SmsReplyIn(BaseModel):
@@ -767,6 +773,39 @@ def create_app(
             p,
             detail=True,
         )
+
+    @app.get("/api/cases/{case_id}/slots")
+    def case_slots(case_id: str, clinic: str | None = None, p: Principal = Depends(require(Perm.CASE_TRANSITION))):
+        """Simulated slots for one clinic over the next 14 days, with free places (rules APPT-1, APPT-2)."""
+        v = _get_visible(case_id, p)
+        cid = clinic or scheduling.default_clinic(v.location, v.screening_type)
+        if cid not in scheduling.CLINICS:
+            raise HTTPException(400, "Unknown clinic.")
+        return {
+            "label": scheduling.LABEL,
+            "clinic": cid,
+            "clinics": [{"id": k, "name": n} for k, n in scheduling.CLINICS.items()],
+            "due_date": v.due_date.isoformat() if v.due_date else None,
+            "slots": scheduling.slots(cid, today(), repo.slot_counts(cid), v.due_date),
+        }
+
+    @app.post("/api/cases/{case_id}/appointments")
+    def book(case_id: str, body: BookIn, p: Principal = Depends(require(Perm.CASE_TRANSITION))):
+        v = _get_visible(case_id, p)
+        parsed = scheduling.parse_slot(body.slot_id)
+        n = repo.slot_counts(parsed[0]).get(body.slot_id, 0) if parsed and parsed[0] in scheduling.CLINICS else 0
+        v = cmd.book_appointment(
+            repo,
+            case_id,
+            slot_id=body.slot_id,
+            actor=p.actor,
+            today=today(),
+            booked_in_slot=n,
+            masked_participant=mask_participant(v.participant_id),
+            reason=body.reason,
+            now=now(),
+        )
+        return _out(v, p, detail=True)
 
     @app.post("/api/cases/{case_id}/sms-replies")
     def sms_reply(case_id: str, body: SmsReplyIn, p: Principal = Depends(auth.current_user)):

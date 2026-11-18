@@ -147,6 +147,13 @@ class MemoryRepository:
                         self.write_ops += 1
         return changed
 
+    def slot_counts(self, clinic: str) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for ix in self._idx.values():
+            if ix.get("idx_slot_clinic") == clinic and ix.get("idx_slot"):
+                out[ix["idx_slot"]] = out.get(ix["idx_slot"], 0) + 1
+        return out
+
     def index_of(self, case_id: str) -> dict[str, Any] | None:
         return self._idx.get(case_id)
 

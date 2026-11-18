@@ -218,6 +218,18 @@ class FirestoreRepository:
         res = q.count().get()
         return int(res[0][0].value)
 
+    def slot_counts(self, clinic: str) -> dict[str, int]:
+        """One equality filter (single-field index, no composite index). Reads one document per booked case."""
+        from google.cloud.firestore_v1.base_query import FieldFilter
+
+        out: dict[str, int] = {}
+        q = self.cases.where(filter=FieldFilter("idx_slot_clinic", "==", clinic)).select(["idx_slot"])
+        for d in q.stream():
+            sid = (d.to_dict() or {}).get("idx_slot")
+            if sid:
+                out[sid] = out.get(sid, 0) + 1
+        return out
+
     def search_ids(self, prefix: str, limit: int = 20) -> list[str]:
         from google.cloud.firestore_v1.base_query import FieldFilter
 

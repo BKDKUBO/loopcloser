@@ -312,3 +312,107 @@ def test_changes_counter_moves_on_writes_only(client):
     client.post("/api/fhir/import", json=sample, headers=H["coordinator"])
     assert client.get("/api/changes", headers=H["worker"]).json()["version"] != v0
     assert client.get("/api/changes").status_code == 401
+
+
+# ------------------------------------------------------------------ simulated slots and booking (APPT-1, APPT-2)
+
+
+def _today():
+    """The API's today is the Manila date (CI runs in UTC)."""
+    from datetime import UTC, datetime
+
+    from loopcloser.domain.localtime import local_date
+
+    return local_date(datetime.now(UTC))
+
+
+def _ready_to_book(client, cid="C-B1"):
+    c = {
+        "case_id": cid,
+        "participant_id": "P-000077",
+        "screening_id": "S-77",
+        "screening_type": "bp",
+        "result": "elevated",
+        "severity": "abnormal",
+        "screened_at": _today().isoformat(),
+        "owner": "demo-worker-01",
+        "contact_consent": "yes",
+    }
+    assert client.post("/api/cases", json=c, headers=H["coordinator"]).status_code == 201
+    for t, extra in [
+        ("reviewed", {}),
+        ("patient_notified", {}),
+        ("understanding_confirmed", {"source": "staff_confirmed"}),
+    ]:
+        assert (
+            client.post(f"/api/cases/{cid}/transition", json={"target": t, **extra}, headers=H["worker"]).status_code
+            == 200
+        )
+
+
+def test_slots_are_weekdays_in_the_next_14_days(client):
+    _ready_to_book(client)
+    r = client.get("/api/cases/C-B1/slots", headers=H["worker"]).json()
+    assert r["label"].startswith("Simulated slots") and r["clinic"] in {c["id"] for c in r["clinics"]}
+    days = {date.fromisoformat(s["date"]) for s in r["slots"]}
+    assert days and all(d.weekday() < 5 and _today() < d <= _today() + timedelta(days=14) for d in days)
+    assert all(s["free"] == 2 and s["time"] in {"09:00", "10:00", "11:00", "14:00"} for s in r["slots"])
+    assert client.get("/api/cases/C-B1/slots?clinic=NOPE", headers=H["worker"]).status_code == 400
+    assert client.get("/api/cases/C-B1/slots", headers=H["program_manager"]).status_code == 403
+
+
+def test_booking_a_slot_stores_a_fhir_shaped_appointment_and_counts_capacity(client):
+    for cid in ("C-B1", "C-B2", "C-B3"):
+        _ready_to_book(client, cid)
+    slot = client.get("/api/cases/C-B1/slots?clinic=SITE-A", headers=H["worker"]).json()["slots"][0]
+    r = client.post("/api/cases/C-B1/appointments", json={"slot_id": slot["slot_id"]}, headers=H["worker"])
+    assert r.status_code == 200, r.text
+    case = r.json()
+    appt = case["appointment"]
+    assert case["state"] == "action_scheduled" and appt["slot_id"] == slot["slot_id"] and appt["simulated"]
+    assert appt["fhir"]["resourceType"] == "Appointment" and appt["fhir"]["status"] == "booked"
+    assert appt["fhir"]["start"].endswith("+08:00") and "P-••••" in json.dumps(appt["fhir"], ensure_ascii=False)
+    assert "P-000077" not in json.dumps(appt)
+    assert (
+        client.post("/api/cases/C-B2/appointments", json={"slot_id": slot["slot_id"]}, headers=H["worker"]).status_code
+        == 200
+    )
+    left = client.get("/api/cases/C-B3/slots?clinic=SITE-A", headers=H["worker"]).json()["slots"][0]
+    assert left["slot_id"] == slot["slot_id"] and left["free"] == 0
+    r = client.post("/api/cases/C-B3/appointments", json={"slot_id": slot["slot_id"]}, headers=H["worker"])
+    assert r.status_code == 422 and r.json()["rule_id"] == "APPT-2"
+    # Rescheduling frees the place.
+    client.post(
+        "/api/cases/C-B1/transition", json={"target": "rescheduled", "reason": "patient asked"}, headers=H["worker"]
+    )
+    assert (
+        client.post("/api/cases/C-B3/appointments", json={"slot_id": slot["slot_id"]}, headers=H["worker"]).status_code
+        == 200
+    )
+
+
+def test_booking_refuses_unoffered_slots_and_follows_the_state_machine(client):
+    _ready_to_book(client)
+    saturday = _today() + timedelta(days=(5 - _today().weekday()) % 7 or 7)
+    for bad in (
+        f"SITE-A|{saturday.isoformat()}T09:00",
+        "SITE-A|2020-01-06T09:00",
+        "SITE-A|garbage",
+        f"MOON|{(_today() + timedelta(days=1)).isoformat()}T09:00",
+    ):
+        r = client.post("/api/cases/C-B1/appointments", json={"slot_id": bad}, headers=H["worker"])
+        assert r.status_code == 422 and r.json()["rule_id"] == "APPT-1", bad
+    c = {
+        "case_id": "C-B9",
+        "participant_id": "P-000078",
+        "screening_id": "S-78",
+        "screening_type": "bp",
+        "result": "elevated",
+        "severity": "abnormal",
+        "screened_at": _today().isoformat(),
+        "owner": "demo-worker-01",
+    }
+    client.post("/api/cases", json=c, headers=H["coordinator"])
+    slot = client.get("/api/cases/C-B9/slots", headers=H["worker"]).json()["slots"][0]["slot_id"]
+    r = client.post("/api/cases/C-B9/appointments", json={"slot_id": slot}, headers=H["worker"])
+    assert r.status_code == 422 and r.json()["rule_id"] == "SM-1"  # new result: not ready to book

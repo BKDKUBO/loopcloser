@@ -30,6 +30,9 @@ Guard rule ids (also listed in docs/guard-rules.md):
   AI-2    No AI drafts while a red flag is open or after a case is closed.
   AI-3    A draft can be used only if every number and date in it was verified against the case record,
           and each draft gets exactly one Use or Discard decision, by a human.
+  APPT-1  Booking from the slot picker needs a slot the simulated schedule offers (weekday, listed time, next 14
+          days). Booking after the pathway deadline is allowed and noted.
+  APPT-2  A simulated slot holds at most its capacity of open booked cases.
   MSG-4   A patient SMS reply (YES / RESCHED / STOP, simulated in this build) is logged as an event. YES can move a
           case to Patient notified at most (never Understanding confirmed); RESCHED moves a booked or missed visit
           to Rescheduled; STOP opts the patient out of SMS at once. Replies never book, close or clear a red flag.
@@ -499,6 +502,39 @@ def close_case(
         rule_id="CLOSE-3" if clean else "CLOSE-1",
     )
     return b.commit()
+
+
+def book_appointment(
+    repo: CaseRepository,
+    case_id: str,
+    *,
+    slot_id: str,
+    actor: Actor,
+    today: date,
+    booked_in_slot: int,
+    masked_participant: str,
+    reason: str | None = None,
+    now: datetime | None = None,
+) -> CaseView:
+    """Book a simulated slot (rules APPT-1, APPT-2). Goes through the normal transition guards (SM-1, OWN-1, RF-1)."""
+    from . import scheduling
+
+    if not actor.is_human:
+        raise GuardViolation("Only a person books appointments.", rule_id="AUTO-1")
+    if not scheduling.is_offered(slot_id, today):
+        raise GuardViolation("That slot is not offered. Pick one from the list.", rule_id="APPT-1")
+    if booked_in_slot >= scheduling.CAPACITY:
+        raise GuardViolation("That slot is full. Pick another time.", rule_id="APPT-2")
+    v = repo.get_case(case_id)
+    if v is None:
+        raise NotFound(f"case {case_id} not found")
+    appt = scheduling.appointment(slot_id, case_id=case_id, masked_participant=masked_participant, reason=reason)
+    payload: dict[str, Any] = {"appointment": appt}
+    if v.due_date and date.fromisoformat(appt["date"]) > v.due_date:
+        payload["note"] = f"Booked after the pathway deadline ({v.due_date.isoformat()})"
+    return transition(
+        repo, case_id, CaseState.ACTION_SCHEDULED, actor=actor, payload=payload, now=now, rule_id="APPT-1"
+    )
 
 
 SMS_REPLY_KEYWORDS = ("YES", "RESCHED", "STOP")

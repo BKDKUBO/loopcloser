@@ -100,3 +100,33 @@ def test_firestore_queries_counts_ladder_and_reindex(fs_repo, lib, coord):
     last = fs_repo.load_events("C-00")[-1]
     assert fs_repo.commit_many([("C-00", last.seq - 1, [last], v)]) == ["C-00"]
     assert len(fs_repo.load_events("C-00")) == n
+
+
+def test_firestore_slot_counts(fs_repo, lib, coord):
+    from datetime import date
+
+    from loopcloser.domain import indexing as idx
+
+    fs_repo.indexer = lambda v: idx.index_fields(v, date(2026, 10, 17))
+    pw = lib.match("fit", "positive", "abnormal")
+    sid = "SITE-A|2026-10-19T09:00"
+    for cid in ("C-1", "C-2"):
+        cmd.open_case(fs_repo, case_id=cid, screening=screening(), pathway=pw, actor=coord, owner="w", now=NOW)
+        for t, p in [
+            (S.REVIEWED, {}),
+            (S.PATIENT_NOTIFIED, {}),
+            (S.UNDERSTANDING_CONFIRMED, {"source": "staff_confirmed"}),
+        ]:
+            cmd.transition(fs_repo, cid, t, actor=coord, payload=p, now=NOW)
+        cmd.book_appointment(
+            fs_repo,
+            cid,
+            slot_id=sid,
+            actor=coord,
+            today=date(2026, 10, 17),
+            booked_in_slot=fs_repo.slot_counts("SITE-A").get(sid, 0),
+            masked_participant="P-••••42",
+            now=NOW,
+        )
+    assert fs_repo.slot_counts("SITE-A") == {sid: 2}
+    assert fs_repo.slot_counts("SITE-B") == {}
