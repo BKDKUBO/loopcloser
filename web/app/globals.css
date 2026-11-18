@@ -97,3 +97,7 @@ a.button { display: inline-block; font-size: 16px; padding: 8px 12px; border-rad
 .slot { font-size: 12px; padding: 3px 6px; }
 .slot.picked { outline: 2px solid #2563eb; background: #dbeafe; }
 .slot.late { border-style: dashed; }
+.badge.risk-watch { background: #fef3c7; color: #92400e; border-color: #f59e0b; }
+.badge.risk-high { background: #fee2e2; color: #991b1b; border-color: #ef4444; }
+.atrisk-list { margin: 0; padding-left: 18px; }
+.atrisk-list li { margin: 4px 0; }

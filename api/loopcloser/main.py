@@ -27,6 +27,7 @@ from .domain import gates as gates_mod
 from .domain import indexing as idx
 from .domain import ladder as ladder_mod
 from .domain import priority as prio
+from .domain import risk as risk_mod
 from .domain import scheduling
 from .domain.case import CaseView
 from .domain.errors import DomainError, GuardViolation
@@ -416,6 +417,8 @@ def create_app(
         d.pop("patient_uid", None)
         t = today()
         d["priority"] = prio.compute(v, t).to_dict()
+        if p.role.value != "patient":  # staff only: administrative signs, never shown to the patient
+            d["attendance_risk"] = risk_mod.compute(v, t)
         d["recommended_action"] = recommend(v)
         d["plain_status"] = plain_status(v)
         d["plain_status_label"] = PLAIN_STATUSES[d["plain_status"]]
@@ -1044,6 +1047,10 @@ def create_app(
         }
 
     # -------------------------------------------------------------- templates (official messages)
+
+    @app.get("/api/risk/rules")
+    def risk_rules(_: Principal = Depends(require(Perm.PATHWAY_READ))) -> dict[str, Any]:
+        return risk_mod.rules_table()
 
     @app.get("/api/templates")
     def list_templates(_: Principal = Depends(require(Perm.PATHWAY_READ))) -> list[dict]:

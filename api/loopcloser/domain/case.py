@@ -54,6 +54,7 @@ class CaseView(BaseModel):
     last_sms_reply: dict[str, Any] | None = None  # {"keyword", "at"} of the newest patient SMS reply
     barriers_open: list[str] = Field(default_factory=list)
     no_show_count: int = 0
+    reschedule_count: int = 0
     reached_contacts: int = 0
     appointment: dict[str, Any] | None = None
     priority_override: dict[str, Any] | None = None
@@ -123,6 +124,8 @@ def _apply(view: CaseView | None, ev: Event) -> CaseView:
             v.escalation_level += 1
         if v.state == CaseState.NO_SHOW:
             v.no_show_count += 1
+        if v.state == CaseState.RESCHEDULED:
+            v.reschedule_count += 1
         if "appointment" in p:
             v.appointment = p["appointment"]
         if "next_action" in p:

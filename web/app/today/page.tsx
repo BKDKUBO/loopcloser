@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CaseActions } from "@/components/CaseActions";
 import { PriorityBadge, WhyPriority } from "@/components/Priority";
 import { RequireRole } from "@/components/RequireRole";
+import { AtRiskStrip, RiskBadge } from "@/components/Risk";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
 import { liveText, useAutoRefresh } from "@/lib/useAutoRefresh";
@@ -31,6 +32,7 @@ function CaseCard({ c, onChange }: { c: CaseView; onChange: (c: CaseView) => voi
         <PriorityBadge p={c.priority} />
         {c.clinical_urgency === "urgent" && <span className="badge urgent">Clinically urgent</span>}
         {c.red_flag_open && <span className="badge urgent">Red flag: automation paused</span>}
+        <RiskBadge r={c.attendance_risk} />
       </div>
       <strong><Link href={`/case?id=${encodeURIComponent(c.id)}`}>{c.id}</Link></strong>
       {" · "}{label(SCREENING_LABELS, c.screening_type)}
@@ -163,6 +165,7 @@ function Today() {
         </div>
       )}
       {msg && <p className="muted" role="status">{msg}</p>}
+      <AtRiskStrip cases={Object.values(data.lanes).flatMap((l) => l.cases)} />
       <div className="lanes">
         {(Object.keys(LANE_LABELS) as Lane[]).map((lane) => (
           <section key={lane} aria-labelledby={`lane-${lane}`}>

@@ -416,3 +416,64 @@ def test_booking_refuses_unoffered_slots_and_follows_the_state_machine(client):
     slot = client.get("/api/cases/C-B9/slots", headers=H["worker"]).json()["slots"][0]["slot_id"]
     r = client.post("/api/cases/C-B9/appointments", json={"slot_id": slot}, headers=H["worker"])
     assert r.status_code == 422 and r.json()["rule_id"] == "SM-1"  # new result: not ready to book
+
+
+# ------------------------------------------------------------------ attendance (drop-off) risk, read time only
+
+from loopcloser.domain import risk  # noqa: E402
+
+
+def _case(repo, lib, coord, cid="C-R", **kw):
+    pw = lib.match("fit", "positive", "abnormal")
+    return cmd.open_case(repo, case_id=cid, screening=screening(**kw), pathway=pw, actor=coord, owner="w", now=NOW)
+
+
+def test_risk_rules_add_up_to_levels(repo, lib, coord, worker):
+    v = _case(repo, lib, coord)
+    assert risk.compute(v, TODAY)["level"] == "none"
+    cmd.transition(repo, "C-R", S.REVIEWED, actor=coord, now=NOW)
+    for _ in range(2):
+        cmd.log_contact_attempt(repo, "C-R", channel="call", result="no_answer", actor=worker, now=NOW)
+    r = risk.compute(repo.get_case("C-R"), TODAY)
+    assert [x["rule_id"] for x in r["reasons"]] == ["RISK-FAILED"] and r["level"] == "none"
+    cmd.report_barrier(repo, "C-R", actor=worker, barrier="transport", now=NOW)
+    r = risk.compute(repo.get_case("C-R"), TODAY)
+    assert r["points"] == 4 and r["level"] == "watch"
+    assert any("ride" in x["help"] for x in r["reasons"] if x["rule_id"] == "RISK-BARRIER")
+    for b in ("cost", "fear"):
+        cmd.report_barrier(repo, "C-R", actor=worker, barrier=b, now=NOW)
+    r = risk.compute(repo.get_case("C-R"), TODAY)
+    assert sum(x["points"] for x in r["reasons"] if x["rule_id"] == "RISK-BARRIER") == 4  # capped
+    assert r["level"] == "high" and r["points"] == 6
+    # the deadline rule: due 2026-11-09 (screened 10-10 + 30 days)
+    late = risk.compute(repo.get_case("C-R"), date(2026, 11, 5))
+    assert any(x["rule_id"] == "RISK-DEADLINE" for x in late["reasons"])
+
+
+def test_risk_excludes_red_flag_closed_and_declined(repo, lib, coord, supervisor):
+    v = _case(repo, lib, coord, phone_valid=False)
+    assert risk.compute(v, TODAY)["points"] == 2  # RISK-NO-PHONE
+    cmd.report_red_flag(repo, "C-R", actor=coord, source="staff", code="x", now=NOW)
+    assert risk.compute(repo.get_case("C-R"), TODAY) == {"level": "none", "points": 0, "reasons": [], "excluded": True}
+    v = _case(repo, lib, coord, cid="C-D", contact_consent="no", phone_valid=False)
+    assert all(x["rule_id"] != "RISK-CONSENT" for x in risk.compute(v, TODAY)["reasons"])  # consent is never scored
+
+
+def test_risk_shows_for_staff_with_its_rule_table(client):
+    c = {
+        "case_id": "C-R1",
+        "participant_id": "P-000099",
+        "screening_id": "S-99",
+        "screening_type": "fit",
+        "result": "positive",
+        "severity": "abnormal",
+        "screened_at": "2026-10-10",
+        "owner": "demo-worker-01",
+        "contact_consent": "yes",
+        "barriers": ["transport", "cost"],
+    }
+    client.post("/api/cases", json=c, headers=H["coordinator"])
+    staff = client.get("/api/cases/C-R1", headers=H["coordinator"]).json()
+    assert staff["attendance_risk"]["level"] in {"watch", "high"}
+    rules = client.get("/api/risk/rules", headers=H["worker"]).json()
+    assert rules["levels"] == {"watch": 3, "high": 6} and "not a validated prediction" in rules["note"]

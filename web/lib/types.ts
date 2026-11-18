@@ -37,6 +37,13 @@ export interface Gate {
   rule_id: string;
 }
 
+export interface AttendanceRisk {
+  level: "none" | "watch" | "high";
+  points: number;
+  excluded?: boolean;
+  reasons: { rule_id: string; points: number; label: string; detail: string | null; help: string }[];
+}
+
 export interface CaseView {
   id: string;
   participant_id: string;
@@ -83,6 +90,7 @@ export interface CaseView {
   gates?: Gate[];
   gates_on_hold?: string[];
   sms_opt_out?: boolean;
+  attendance_risk?: AttendanceRisk;
   last_sms_reply?: { keyword: string; at: string } | null;
   source?: { kind: string; resource?: string; code?: string | null; display?: string | null; interpretation?: string;
     referral?: string; bundle_id?: string | null } | null;

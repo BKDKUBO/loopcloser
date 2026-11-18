@@ -12,6 +12,7 @@ import { KindBadge, KindLegend } from "@/components/Kind";
 import { PriorityBadge, WhyPriority } from "@/components/Priority";
 import { RequireRole } from "@/components/RequireRole";
 import { RevealContact } from "@/components/RevealContact";
+import { RiskBadge, RiskPanel } from "@/components/Risk";
 import { SafetyLine } from "@/components/SafetyLine";
 import { SlotPicker } from "@/components/SlotPicker";
 import { api } from "@/lib/api";
@@ -238,6 +239,7 @@ function CaseDetail() {
         <span className={`status status-${c.plain_status}`}>{c.plain_status_label}</span>
         <span className={`badge ${overdue ? "urgent" : ""}`}>{c.plain_status === "done" ? (closed ? "Closed" : "Visit done") : dueText(c.days_to_due)}</span>
         {c.lost_contact && <span className="badge urgent">Lost contact</span>}
+        <RiskBadge r={c.attendance_risk} />
       </p>
       <p>
         <KindBadge kind="fact" />
@@ -283,6 +285,7 @@ function CaseDetail() {
             {s.role === "supervisor" && !closed && <OverrideForm c={c} onChange={changed} />}
           </section>
           <SafetyLine pathway={`${c.pathway_id} v${c.pathway_version}`} collapsed />
+          <RiskPanel c={c} />
           <Barriers c={c} onChange={changed} />
           <section aria-labelledby="lad"><h2 id="lad">Escalation ladder (day {c.day ?? 0}) <KindBadge kind="rule" /></h2>
             <ol className="ladder">{(c.ladder ?? []).map((st) => (
