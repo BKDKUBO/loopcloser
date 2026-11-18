@@ -18,7 +18,7 @@ flowchart LR
     D -->|Pass| E["5. Staff contact the patient:<br/>call, approved SMS template,<br/>home visit<br/>HUMAN DECIDES"]
     AI["Optional call guide drafted<br/>by Gemini for staff, checked<br/>against the record<br/>AI-WRITTEN (draft only)"] -.->|"read before the call, then Use or Discard"| E
     E --> F["6. Booked, visit recorded<br/>RECORDED FACT"]
-    F --> G["7. Closed by a coordinator<br/>with evidence or sign-off<br/>HUMAN DECIDES"]
+    F --> G["7. Closed with evidence<br/>and a supervisor sign-off<br/>HUMAN DECIDES"]
     L["Escalation ladder, Day 2 to 14:<br/>reminder (gated), home visit,<br/>supervisor<br/>RULE RESULT"] -.-> E
     R["Red flag at any step:<br/>automation stops,<br/>a person takes over"] -.-> C
 ```
@@ -35,7 +35,7 @@ pass/hold checks; people review, contact and close. The case page labels every p
 | **Live demo** | https://loopcloser-bkdkubo.web.app (no sign-in needed: use Demo mode) |
 | **Video (under 3 min)** | ⚠️ PLACEHOLDER: video link to be added by the team |
 | **Pitch deck** | ⚠️ PLACEHOLDER: deck link to be added by the team |
-| **Measured results** | [EVAL.md](EVAL.md): 55 of 55 labeled synthetic cases follow the published rules, 0 false positives, 0 false negatives |
+| **Measured results** | [EVAL.md](EVAL.md): 57 of 57 labeled synthetic cases follow the published rules, 0 false positives, 0 false negatives |
 | **Judging criteria** | [How LoopCloser meets the judging criteria](#how-loopcloser-meets-the-judging-criteria) |
 | **Assumptions and limitations** | [Assumptions and limitations](#assumptions-and-limitations); fuller notes in [docs/assumptions-and-limitations.md](docs/assumptions-and-limitations.md) |
 
@@ -54,18 +54,23 @@ timeline is real events, not pasted text. Type the case id into **Find a case** 
 1. **Lead story: C-DEMO-01, Nena Bautista, positive FIT.** Sign in as **Coordinator (demo)** and open C-DEMO-01.
    The readable timeline shows the whole loop: result reviewed, first call missed on Day 2, automatic SMS
    reminder on Day 4, the ladder's community health worker step and a home visit on Day 7, colonoscopy booked on
-   Day 8, visit completed on Day 11, closed on Day 12 by a coordinator with structured evidence (visit date,
-   facility, record number DH-26-0417). Press **See the patient's phone** for the SMS she received (`/phone`).
+   Day 8, visit completed on Day 11, closed on Day 12 with structured evidence (visit date, facility, record
+   number DH-26-0417) and a supervisor's sign-off. Press **See the patient's phone** for the SMS she received (`/phone`).
 2. **C-DEMO-02, red flag.** A patient reports a severe headache: automation stops, a human task opens, and
    "Prepare for the call" is refused until a person resolves it.
 3. **C-DEMO-03, nobody owns it.** A new result with no owner. Press **Advance 1 day** (supervisor) and it
    escalates instead of waiting silently.
-4. **C-DEMO-04, close blocked.** Visit completed, but **Close** stays off until a visit date, facility and record
-   number are entered; the API refuses a close without them too (rules CLOSE-1, CLOSE-3). The patient's name and
+4. **C-DEMO-04, close blocked.** Visit completed, but **Sign off and close** stays off until a visit date, facility
+   and record number are entered and a supervisor ticks the sign-off; as a coordinator the checklist says a
+   supervisor's sign-off is still needed. The API refuses a close without them too (rules CLOSE-1, CLOSE-2, CLOSE-3). The patient's name and
    phone are hidden until you press **Show name and phone**, and that reveal is logged (rule PRIV-1).
 5. **C-DEMO-05, lost contact.** Three failed calls trigger escalation (rule ESC-1) and the "lost contact" count.
-6. Others to try: **C-DEMO-06** transport barrier, **C-DEMO-07** no-show, **C-DEMO-08** declined and closed with
-   a sign-off, **C-DEMO-09** speaks Cebuano (needs a navigator, +1 priority), **C-DEMO-10** has no phone so the
+6. **New in feedback-v3:** as Coordinator open **Import FHIR**, press **Load sample bundle**, **Check bundle**,
+   then **Import**: a new case opens with consent not recorded. On **See the patient's phone** press YES, RESCHED
+   or STOP (simulated replies) and watch the case update in another tab. Book from the simulated slot picker on a
+   case that is ready to book (e.g. C-DEMO-07 after its no-show). Today shows an "At risk of dropping off" strip.
+7. Others to try: **C-DEMO-06** transport barrier, **C-DEMO-07** no-show, **C-DEMO-08** declined and closed with
+   a documented reason and a supervisor's sign-off, **C-DEMO-09** speaks Cebuano (needs a navigator, +1 priority), **C-DEMO-10** has no phone so the
    SMS reminder is skipped, **C-DEMO-11** borderline result, **C-DEMO-12** critical and urgent, **C-DEMO-13**
    32 days overdue and escalated.
 7. **C-DEMO-14, missing information: the system holds instead of acting.** Consent to contact was not recorded
@@ -106,8 +111,8 @@ The system is event-sourced: an append-only event log is the source of truth, wi
 versioned hash-locked pathways, a published priority points table, guard rules, and an escalation ladder. See
 [Architecture](#architecture) and [docs/guard-rules.md](docs/guard-rules.md).
 
-Measured results in [EVAL.md](EVAL.md): 55 of 55 labeled synthetic cases follow the published rules (0 false
-positives, 0 false negatives), including guard rules 26/26. The same eval includes a ladder-on vs ladder-off
+Measured results in [EVAL.md](EVAL.md): 57 of 57 labeled synthetic cases follow the published rules (0 false
+positives, 0 false negatives), including guard rules 28/28. The same eval includes a ladder-on vs ladder-off
 comparison on 1,019 synthetic cases (targets written in commit `d908191` before the run): T1 unaccountable and
 T2 silently overdue both went to 0; T3 (177 unowned) and T4 (355 overdue) were unchanged, as targeted; T5 missed
 (see [Assumptions and limitations](#assumptions-and-limitations)). API tests on this branch: 154 passed, 3
@@ -128,8 +133,8 @@ the AI-written label on a call guide (17, offline template locally) and the prin
 
 LoopCloser is not a diagnostic AI. Rules decide the next action, owner, priority and deadline; automation does
 not contact a patient until a human has reviewed the result (ladder Day 1 is human review; the reminder step
-only runs for reviewed or notified cases). People close cases (reason plus evidence or sign-off; the API
-refuses otherwise, rules CLOSE-1, CLOSE-3). Red flags stop automation (RF-1, RF-2). Names and phones are hidden
+only runs for reviewed or notified cases). People close cases (reason plus evidence and a supervisor's sign-off;
+the API refuses otherwise, rules CLOSE-1, CLOSE-2, CLOSE-3). Red flags stop automation (RF-1, RF-2). Names and phones are hidden
 until a logged reveal (PRIV-1). Official patient messages are approved templates only; Gemini never sends them
 (MSG-3). AI only drafts a call guide for staff, from masked facts, with every number and date verified; drafts
 never change case state. See [The safety line](#the-safety-line). No real patient data is in this demo; all
@@ -168,6 +173,20 @@ provider is chosen yet). Full math: [Pilot and cost](#pilot-and-cost).
 ## Assumptions and limitations
 
 Fuller write-up: [docs/assumptions-and-limitations.md](docs/assumptions-and-limitations.md).
+
+### What is real and what is simulated
+
+| Part | In this build | Not claimed |
+|---|---|---|
+| Lab results in | CSV import, or a **FHIR R4 Bundle pasted** on `/fhir` (or a built-in synthetic sample bundle). Patient + Observation / DiagnosticReport (+ ServiceRequest as the referral) are read and mapped by a short LOINC table; the lab's interpretation code decides abnormal or normal. | **No live EHR, lab or HIE connection.** No FHIR server is called. The LOINC table is pending clinical review. |
+| SMS to patients | Template messages are rendered and **logged in a simulated outbox**; the patient's phone page shows them. | **No SMS is sent.** No SMS provider is chosen or priced. |
+| Patient SMS replies | YES / RESCHED / STOP buttons on the mock phone page **simulate** the patient texting back; each reply is an event and changes the case under rule MSG-4 (STOP stops further SMS). | **No SMS is received.** A real build would take these from an SMS gateway webhook. |
+| Phone calls | "Call on my phone" is a `tel:` link that opens the worker's own dialer after the logged reveal; the worker then logs the result. | **LoopCloser places no calls** and records no call audio. |
+| Appointment booking | A slot picker over **simulated slots** (fictional clinics, weekdays 09:00 / 10:00 / 11:00 / 14:00, 2 places each, next 14 days); capacity is counted from LoopCloser's own bookings. The booking is stored on the case as a FHIR R4 `Appointment`. | **Not a real clinic schedule**; the Appointment is not sent anywhere. |
+| Drop-off risk | Fixed rules with points and an administrative suggestion (rules RISK-*), shown as a Today strip and on the case. | **Not a prediction or ML model**; thresholds are team-chosen and not validated; no percentages. |
+| Closing a case | Needs evidence **and** a supervisor's sign-off (rules CLOSE-1, CLOSE-2). | The demo has no separate clinician role; the supervisor stands in as the clinical sign-off. |
+| Live updates | Today, the case page and the phone page check for changes every 12 seconds (paused while the tab is hidden). | Not push notifications. |
+| Patients and data | 1,000 generated patients plus 14 scripted stories, all SIMULATED. | No real patient data. |
 
 - **All demo cases are synthetic.** The seed is 1,000 generated patients plus 14 hand-written stories, every row
   labeled SIMULATED. Injected failure rates are team test settings, not population statistics
@@ -227,7 +246,7 @@ LoopCloser is a care-continuity and safety system, **not a diagnostic AI**.
    the follow-up priority. No machine learning, no AI in any decision.
 2. **People act.** Every state change is an event with the person, their role and the rule that allowed it.
    Automation can only escalate or ask for human review.
-3. **People close.** Only a coordinator or supervisor can close a case, with a reason and evidence or a sign-off.
+3. **People close.** Closing needs a reason, evidence and a supervisor's sign-off; a coordinator prepares the evidence.
 4. **Red flags stop automation** until a person resolves them; only a supervisor can resume it.
 5. **AI only drafts, for staff.** "Prepare for the call" asks Gemini on Vertex AI for a call guide built from
    masked facts (no names, phone numbers or notes). The draft is labeled "AI draft. Not medical advice.", every
@@ -244,14 +263,14 @@ LoopCloser is a care-continuity and safety system, **not a diagnostic AI**.
 
 ## Measured, not estimated
 
-From [EVAL.md](EVAL.md) (55 hand-labeled synthetic cases run through the real API; labels written from our
+From [EVAL.md](EVAL.md) (57 hand-labeled synthetic cases run through the real API; labels written from our
 published rules, so this checks that the code follows them, not clinical accuracy):
 
 | Check | Result |
 |---|---|
 | Pathway routing, urgency, red flags | 13/13 correct |
 | Follow-up priority tier and score | 12/12 correct |
-| Guard rules (allow or block) | 26/26 correct, 0 unsafe actions allowed, 0 safe actions blocked |
+| Guard rules (allow or block) | 28/28 correct, 0 unsafe actions allowed, 0 safe actions blocked |
 | Escalation after failed contacts | 4/4 correct |
 | API time per request (local, no network) | p50 4.5 ms |
 | Live demo, Today view | p50 about 1 s; cold start 7 to 10 s |
@@ -296,6 +315,7 @@ Dates are from `git log` (Manila time). The repo history starts on 2026-10-17.
 | 2026-11-14 | `d908191` | Ladder on/off targets written down before the comparison was run |
 | 2026-11-14 | `d565959`, `7685407` | 13 scripted demo stories, plain statuses, structured closure evidence, logged contact reveal, Today summary and search, dashboard, CSV import screen, patient phone page |
 | 2026-11-15 | `a9d131a`, `afbc55d` | After the 4 Nov webinar: content labels (recorded fact, rule result, AI-written), pass/hold checks with consent to contact (GATE-1), missing-information story C-DEMO-14, staff-only logged downloads, workflow diagram, WHO and DECIDE-AI mapping, pilot evidence plan |
+| 2026-11-19 | `c6c96c6` to `111e199` | After the finalist feedback (branch `feedback-v3`): closing needs evidence **and** a supervisor sign-off, FHIR R4 Bundle import (paste or sample, no server), simulated patient SMS replies (YES / RESCHED / STOP), tap-to-call, auto-refresh, booking from simulated slots (FHIR Appointment shape), drop-off risk strip |
 
 **Reused from InvoiceSentinel (the team's earlier project):** the stack and the deployment pattern: Next.js static
 export on Firebase Hosting, FastAPI on Cloud Run at min 0, Firestore, Gemini, Secret Manager, a budget alert, and
@@ -328,7 +348,7 @@ speakers) and one line of code. Nothing has been tested outside the Philippines.
 
 - **Health record integration:** Malaffi (Abu Dhabi's health information exchange), Oracle Health and Epic are
   possible future integration targets, named in the 4 November webinar. LoopCloser has no integration with any
-  of them today; results come in through the CSV import.
+  of them today; results come in through the CSV import or a pasted FHIR R4 Bundle (no server connection).
 - **Consent:** today a yes/no flag with its source, recorded by staff. A real deployment needs the facility's
   consent form and a legal review of local data-protection consent rules.
 - **Ladder fixes from the eval:** cap or batch supervisor escalations, and decide with a clinician whether an
@@ -413,8 +433,8 @@ project setup, billing and cost.
   Escalated*) and red-flag states (*Red flag reported → Automation paused → Human task open →
   Clinician contacted / Resolved by human*).
 - **Guard rules** (`domain/commands.py`, listed in [docs/guard-rules.md](docs/guard-rules.md)): messages
-  never move a case past *Patient notified* and never close it; closing needs a coordinator or supervisor
-  plus a reason and evidence or sign-off; urgent cases need a human owner; red flags pause automation and
+  never move a case past *Patient notified* and never close it; closing needs a reason, evidence and a
+  supervisor's sign-off; urgent cases need a human owner; red flags pause automation and
   only a supervisor can resume it; N failed contacts escalate.
 - **Single owner per case**: `owner`, `backup_owner`, `clinician_reviewer`, `next_action`, `due_date`,
   `escalation_level`, contact counters, `closure_reason`. Cases without an owner get a data-quality flag.
@@ -456,8 +476,23 @@ project setup, billing and cost.
 - **Plain statuses and a Today summary (finalist-v2).** Every case shows one of four plain statuses (to contact,
   booked, needs review, done) and "N days overdue". Today opens with one sentence ("377 to contact. 93 overdue...")
   and has My cases, a screening filter and find-by-case-id. Name search is deliberately not offered.
-- **Structured closure evidence (rule CLOSE-3).** Closing with evidence needs a visit date (not in the future,
-  not before the case opened), the facility and a record number in a fixed format.
+- **Structured closure evidence and supervisor sign-off (rules CLOSE-1, CLOSE-2, CLOSE-3).** Closing needs
+  evidence and a supervisor's sign-off. After a visit the evidence is a visit date (not in the future, not before
+  the case opened), the facility and a record number in a fixed format; for a declined or unreachable case, a
+  documented reference. Coordinators see the same checklist; only a supervisor can sign off.
+- **FHIR R4 import (`/fhir`, feedback-v3).** Paste a Bundle or load a synthetic sample (positive FIT, high-risk HPV,
+  high blood pressure); Check shows each result as ready, skipped (preliminary or normal) or an error with the reason;
+  Import opens the case. Consent starts not recorded (calls and SMS hold), names and phones in the Bundle are never
+  stored, and the case shows where it came from (resource, LOINC code, lab interpretation, referral).
+- **Simulated patient SMS replies (rule MSG-4).** YES, RESCHED and STOP on the phone page; STOP blocks further SMS.
+- **Tap-to-call.** After the logged reveal, "Call on my phone" opens the worker's own dialer, unless a check holds calls.
+- **Booking from simulated slots (rules APPT-1, APPT-2).** Pick a clinic and a time; full slots are disabled; the
+  booking is stored as a FHIR R4 Appointment on the case.
+- **Drop-off risk strip (rules RISK-*).** "At risk of dropping off" on Today and a panel on each case with the
+  signs, points and suggested help. On the 1,000-patient demo seed (seed 42, measured 2026-11-19 at seed time):
+  907 none, 107 watch, 5 high of 1,019 cases.
+- **Auto-refresh.** Today, the case page and the phone page update by themselves when anything changes (checked
+  every 12 s, paused in a hidden tab), so an action in one tab shows in another.
 - **Content labels.** Every case page has a legend and badges: **Recorded fact** (data on file), **Rule result**
   (pathway, deadline, priority points, checks, ladder steps) and **AI-written** (the Gemini call guide). Timeline
   events carry the same badge, and the downloads carry the same three kinds.
@@ -497,7 +532,7 @@ Status: ✅ done in code and tested · 🟡 configured, applied at deploy · ⬜
 - ✅ Firebase Auth sign-in; the API verifies ID tokens with the Admin SDK (`api/loopcloser/auth.py`)
 - ✅ Five roles (worker, coordinator, supervisor, program manager, patient) with a permission matrix
   (`domain/roles.py`); every route declares the permission it needs; hidden cases return 404
-- ✅ Domain guards repeat the critical checks (only coordinator/supervisor close, only supervisor resumes automation)
+- ✅ Domain guards repeat the critical checks (only a supervisor signs off and closes, only a supervisor resumes automation)
 - ✅ Firestore security rules enforce roles: workers read only assigned cases, patients only their own case
   and never the event log, no client writes anywhere (`firestore.rules`, 8 emulator tests)
 - ✅ API rate limiting: 120/min per IP, 10/min for imports, AI and demo seeding; `429` with `Retry-After`
@@ -542,8 +577,8 @@ Status: ✅ done in code and tested · 🟡 configured, applied at deploy · ⬜
 - ⬜ Uptime check and alert policy on `/ready` and on error rate
 
 ## What this is not
-No diagnosis, no treatment advice, no autonomous triage, no ML risk scores, no LLM decisions,
-no real SMS or patient data, no auto-closure, no claims of improved outcomes.
+No diagnosis, no treatment advice, no autonomous triage, no ML risk scores (the drop-off risk is fixed rules),
+no LLM decisions, no real SMS or patient data, no live EHR connection, no auto-closure, no claims of improved outcomes.
 
 ## Repo layout
 ```
