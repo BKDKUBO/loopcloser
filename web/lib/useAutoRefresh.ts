@@ -44,7 +44,7 @@ export function useAutoRefresh(reload: () => unknown, enabled = true) {
       if (v) { clearTimeout(timer); tick(); }
     };
     document.addEventListener("visibilitychange", onVis);
-    timer = setTimeout(tick, POLL_MS);
+    tick(); // first call only records the baseline version (the page has just loaded its data)
     return () => { stopped = true; clearTimeout(timer); document.removeEventListener("visibilitychange", onVis); };
   }, [enabled, s]);
 
