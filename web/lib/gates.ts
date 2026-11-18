@@ -12,7 +12,8 @@ export function blockingGates(c: CaseView, channel: Channel): Gate[] {
 export function blockReason(c: CaseView, channel: Channel): string | null {
   const held = blockingGates(c, channel);
   if (held.length === 0) return null;
-  return `On hold (rule GATE-1): ${held.map((g) => `${g.label.toLowerCase()} — ${g.missing ?? g.detail}`).join(" ")}`;
+  const rules = Array.from(new Set(held.map((g) => g.rule_id || "GATE-1"))).join(", ");
+  return `On hold (rule ${rules}): ${held.map((g) => `${g.label.toLowerCase()} — ${g.missing ?? g.detail}`).join(" ")}`;
 }
 
 export function gateCounts(c: CaseView): { pass: number; hold: number } {

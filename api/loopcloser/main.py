@@ -27,12 +27,15 @@ from .domain import gates as gates_mod
 from .domain import indexing as idx
 from .domain import ladder as ladder_mod
 from .domain import priority as prio
+from .domain import risk as risk_mod
+from .domain import scheduling
 from .domain.case import CaseView
 from .domain.errors import DomainError, GuardViolation
 from .domain.events import SYSTEM_ACTOR, Actor, Event, EventType
 from .domain.next_action import PLAIN_STATUSES, lost_contact, plain_status, recommend
 from .domain.roles import Perm, Role, has_perm
 from .domain.states import CaseState
+from .fhir import importer as fhir_mod
 from .imports.csv_validation import validate_csv
 from .logging_setup import request_id_var, setup_logging, trace_var
 from .pathways.library import PathwayLibrary, default_library
@@ -43,7 +46,7 @@ from .synth.stories import play_stories
 from .templates.library import TemplateError, default_templates
 
 log = logging.getLogger("loopcloser")
-SENSITIVE_PREFIXES = ("/api/imports", "/api/ai", "/api/demo", "/api/ladder")
+SENSITIVE_PREFIXES = ("/api/imports", "/api/ai", "/api/demo", "/api/ladder", "/api/fhir")
 SCREENING_TYPES = frozenset({"fit", "bp", "cervical", "generic", "symptom"})
 MANILA = ZoneInfo("Asia/Manila")
 SEED_ACTOR = Actor(id="demo-seed-history", role=Role.COORDINATOR, kind="human")
@@ -164,6 +167,15 @@ class ConsentIn(BaseModel):
     source: str = Field(max_length=200)
 
 
+class BookIn(BaseModel):
+    slot_id: str = Field(max_length=60)
+    reason: str | None = Field(default=None, max_length=200)
+
+
+class SmsReplyIn(BaseModel):
+    keyword: Literal["YES", "RESCHED", "STOP"]
+
+
 class NoteIn(BaseModel):
     text: str = Field(max_length=2000)
 
@@ -274,6 +286,11 @@ def create_app(
         allow_headers=["authorization", "content-type", "x-demo-role", "x-demo-user"],
     )
 
+    # Auto-refresh: a counter of successful writes on this instance, bumped by the middleware below. Pages poll
+    # GET /api/changes (no database read) and reload only when it moves. The demo runs one instance (max 1);
+    # with more, a page still reloads on its own every 5 minutes.
+    changes: dict[str, Any] = {"boot": uuid.uuid4().hex[:8], "n": 0}
+
     @app.middleware("http")
     async def observe(request: Request, call_next):
         rid = request.headers.get("x-request-id") or uuid.uuid4().hex[:16]
@@ -302,6 +319,8 @@ def create_app(
                 {"detail": "Internal error. Quote this id when reporting it.", "request_id": rid}, status_code=500
             )
         ms = round((time.perf_counter() - start) * 1000, 1)
+        if path.startswith("/api/") and request.method == "POST" and response.status_code < 400:
+            changes["n"] += 1  # what the Today and case pages poll (GET /api/changes)
         response.headers["X-Request-Id"] = rid
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Cache-Control"] = response.headers.get("Cache-Control", "no-store")
@@ -367,6 +386,11 @@ def create_app(
 
     # -------------------------------------------------------------- identity
 
+    @app.get("/api/changes")
+    def changes_view(_: Principal = Depends(auth.current_user)) -> dict[str, Any]:
+        """Cheap poll for auto-refresh: changes when any case or the demo clock changed. No database read."""
+        return {"version": f"{changes['boot']}-{changes['n']}"}
+
     @app.get("/api/me")
     def me(p: Principal = Depends(auth.current_user)) -> dict[str, Any]:
         from .domain.roles import PERMISSIONS
@@ -393,6 +417,8 @@ def create_app(
         d.pop("patient_uid", None)
         t = today()
         d["priority"] = prio.compute(v, t).to_dict()
+        if p.role.value != "patient":  # staff only: administrative signs, never shown to the patient
+            d["attendance_risk"] = risk_mod.compute(v, t)
         d["recommended_action"] = recommend(v)
         d["plain_status"] = plain_status(v)
         d["plain_status_label"] = PLAIN_STATUSES[d["plain_status"]]
@@ -696,6 +722,19 @@ def create_app(
         v = _get_visible(case_id, p)
         msgs = []
         for e in repo.load_events(case_id):
+            if e.type == EventType.SMS_REPLY_RECEIVED:
+                msgs.append(
+                    {
+                        "at": e.at.isoformat(),
+                        "direction": "in",
+                        "template_id": None,
+                        "language": v.language,
+                        "channel": "sms",
+                        "by_automation": False,
+                        "text": e.payload.get("keyword"),
+                    }
+                )
+                continue
             if e.type.value != "notification_status" or e.payload.get("status") != "sent":
                 continue
             tpl = templates.get(e.payload["template_id"], e.payload.get("template_version"))
@@ -709,6 +748,7 @@ def create_app(
             msgs.append(
                 {
                     "at": e.at.isoformat(),
+                    "direction": "out",
                     "template_id": e.payload["template_id"],
                     "language": lang,
                     "channel": e.payload.get("channel", "sms"),
@@ -721,6 +761,9 @@ def create_app(
             "participant_id": _out(v, p)["participant_id"],
             "language": v.language,
             "simulated": True,
+            "sms_opt_out": v.sms_opt_out,
+            "state": v.state.value,
+            "can_reply": v.state != CaseState.CLOSED and any(m["direction"] == "out" for m in msgs),
             "messages": msgs,
         }
 
@@ -733,6 +776,120 @@ def create_app(
             p,
             detail=True,
         )
+
+    @app.get("/api/cases/{case_id}/slots")
+    def case_slots(case_id: str, clinic: str | None = None, p: Principal = Depends(require(Perm.CASE_TRANSITION))):
+        """Simulated slots for one clinic over the next 14 days, with free places (rules APPT-1, APPT-2)."""
+        v = _get_visible(case_id, p)
+        cid = clinic or scheduling.default_clinic(v.location, v.screening_type)
+        if cid not in scheduling.CLINICS:
+            raise HTTPException(400, "Unknown clinic.")
+        return {
+            "label": scheduling.LABEL,
+            "clinic": cid,
+            "clinics": [{"id": k, "name": n} for k, n in scheduling.CLINICS.items()],
+            "due_date": v.due_date.isoformat() if v.due_date else None,
+            "slots": scheduling.slots(cid, today(), repo.slot_counts(cid), v.due_date),
+        }
+
+    @app.post("/api/cases/{case_id}/appointments")
+    def book(case_id: str, body: BookIn, p: Principal = Depends(require(Perm.CASE_TRANSITION))):
+        v = _get_visible(case_id, p)
+        parsed = scheduling.parse_slot(body.slot_id)
+        n = repo.slot_counts(parsed[0]).get(body.slot_id, 0) if parsed and parsed[0] in scheduling.CLINICS else 0
+        v = cmd.book_appointment(
+            repo,
+            case_id,
+            slot_id=body.slot_id,
+            actor=p.actor,
+            today=today(),
+            booked_in_slot=n,
+            masked_participant=mask_participant(v.participant_id),
+            reason=body.reason,
+            now=now(),
+        )
+        return _out(v, p, detail=True)
+
+    @app.post("/api/cases/{case_id}/sms-replies")
+    def sms_reply(case_id: str, body: SmsReplyIn, p: Principal = Depends(auth.current_user)):
+        """Simulated patient SMS reply (rule MSG-4), posted by the mock phone page. Demo mode only: a real build
+        would receive these from an SMS gateway webhook. Logged as the patient's phone, with who pressed it."""
+        if not cfg.demo_mode:
+            raise HTTPException(403, "Simulated SMS replies are only available in demo mode.")
+        if not (has_perm(p.role, Perm.CASE_CONTACT) or has_perm(p.role, Perm.PATIENT_RESPOND)):
+            raise HTTPException(403, f"Your role ({p.role.value}) cannot do this.")
+        _get_visible(case_id, p)
+        v = cmd.record_sms_reply(repo, case_id, keyword=body.keyword, entered_by=p.actor, now=now())
+        return _out(v, p, detail=True)
+
+    # -------------------------------------------------------------- FHIR R4 import (pasted or sample Bundle)
+
+    def _fhir_plan(bundle: Any) -> fhir_mod.ImportPlan:
+        try:
+            return fhir_mod.plan_import(bundle, today=today())
+        except fhir_mod.BundleError as exc:
+            raise HTTPException(422, str(exc)) from None
+
+    async def _fhir_body(request: Request) -> Any:
+        raw = await request.body()
+        if len(raw) > fhir_mod.MAX_BYTES:
+            raise HTTPException(413, f"Bundle too large. At most {fhir_mod.MAX_BYTES // 1024} KB.")
+        try:
+            import json as _json
+
+            data = _json.loads(raw or b"null")
+        except ValueError:
+            raise HTTPException(422, "Not valid JSON. Paste a FHIR R4 Bundle in JSON format.") from None
+        return data.get("bundle", data) if isinstance(data, dict) and "bundle" in data else data
+
+    @app.get("/api/fhir/sample")
+    def fhir_sample(kind: str = "fit", _: Principal = Depends(require(Perm.IMPORT_CSV))) -> dict[str, Any]:
+        """A SYNTHETIC FHIR R4 Bundle (fresh identifiers each call). Nothing is fetched from any server."""
+        if kind not in fhir_mod.SAMPLE_KINDS:
+            raise HTTPException(400, f"kind must be one of {', '.join(fhir_mod.SAMPLE_KINDS)}")
+        return fhir_mod.sample_bundle(kind, today=today())
+
+    @app.post("/api/fhir/import/validate")
+    async def fhir_validate(request: Request, _: Principal = Depends(require(Perm.IMPORT_CSV))) -> dict[str, Any]:
+        plan = _fhir_plan(await _fhir_body(request))
+        items = []
+        for m in plan.items:
+            d = m.to_dict()
+            if m.case_id and repo.get_case(m.case_id):
+                d["status"], d["messages"] = "skipped", [*m.messages, f"Already imported as {m.case_id}."]
+            items.append(d)
+        return {"synthetic": plan.synthetic, "warnings": plan.warnings, "items": items}
+
+    @app.post("/api/fhir/import")
+    async def fhir_import(request: Request, p: Principal = Depends(require(Perm.IMPORT_CSV))) -> dict[str, Any]:
+        """Open a case for each final, flagged result in the Bundle. Same domain commands and guards as any case;
+        consent starts not recorded (GATE-1); names and phones are never stored."""
+        plan = _fhir_plan(await _fhir_body(request))
+        items, opened = [], []
+        for m in plan.items:
+            d = m.to_dict()
+            if m.status == "ready" and m.screening and m.case_id:
+                pw = lib.match(m.screening["screening_type"], m.screening["result"], m.screening["severity"])
+                if repo.get_case(m.case_id):
+                    d["status"], d["messages"] = "skipped", [*m.messages, f"Already imported as {m.case_id}."]
+                elif pw is None:
+                    d["status"], d["messages"] = "error", [*m.messages, "No pathway matches this result."]
+                else:
+                    source = {**(m.source or {}), **({"referral": m.referral} if m.referral else {})}
+                    v = cmd.open_case(
+                        repo,
+                        case_id=m.case_id,
+                        screening=m.screening,
+                        pathway=pw,
+                        actor=p.actor,
+                        synthetic=plan.synthetic,
+                        source=source,
+                        now=now(),
+                    )
+                    d["status"] = "opened"
+                    opened.append(_out(v, p))
+            items.append(d)
+        return {"synthetic": plan.synthetic, "warnings": plan.warnings, "items": items, "opened": opened}
 
     # -------------------------------------------------------------- downloads (staff only, logged: PRIV-2)
 
@@ -890,6 +1047,10 @@ def create_app(
         }
 
     # -------------------------------------------------------------- templates (official messages)
+
+    @app.get("/api/risk/rules")
+    def risk_rules(_: Principal = Depends(require(Perm.PATHWAY_READ))) -> dict[str, Any]:
+        return risk_mod.rules_table()
 
     @app.get("/api/templates")
     def list_templates(_: Principal = Depends(require(Perm.PATHWAY_READ))) -> list[dict]:

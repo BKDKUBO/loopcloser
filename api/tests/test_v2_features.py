@@ -110,17 +110,19 @@ GOOD = {"visit_date": "2026-10-17", "facility": "District hospital", "record_num
         ({"facility": "x" * 121}, "too long"),
     ],
 )
-def test_structured_evidence_is_validated(repo, lib, coord, worker, bad, msg):
+def test_structured_evidence_is_validated(repo, lib, coord, worker, supervisor, bad, msg):
     _to_visit(repo, lib, coord, worker)
     with pytest.raises(GuardViolation) as e:
-        cmd.close_case(repo, "C-1", actor=coord, closure_reason="done", evidence=GOOD | bad, now=NOW)
+        cmd.close_case(
+            repo, "C-1", actor=supervisor, closure_reason="done", evidence=GOOD | bad, sign_off=True, now=NOW
+        )
     assert e.value.rule_id == "CLOSE-3" and msg in e.value.message
     assert repo.get_case("C-1").state == S.VISIT_COMPLETED
 
 
-def test_structured_evidence_is_stored(repo, lib, coord, worker):
+def test_structured_evidence_is_stored(repo, lib, coord, worker, supervisor):
     _to_visit(repo, lib, coord, worker)
-    v = cmd.close_case(repo, "C-1", actor=coord, closure_reason="done", evidence=GOOD, now=NOW)
+    v = cmd.close_case(repo, "C-1", actor=supervisor, closure_reason="done", evidence=GOOD, sign_off=True, now=NOW)
     assert v.state == S.CLOSED and v.closure_evidence_detail == GOOD
     assert "DH-26-0417" in v.closure_evidence
     assert repo.load_events("C-1")[-1].rule_id == "CLOSE-3"
@@ -129,18 +131,24 @@ def test_structured_evidence_is_stored(repo, lib, coord, worker):
 def test_close_api_takes_structured_evidence(seeded):
     client, _ = seeded
     url = "/api/cases/C-DEMO-04/close"
-    r = client.post(url, json={"closure_reason": "seen"}, headers=H["coordinator"])
+    r = client.post(url, json={"closure_reason": "seen", "sign_off": True}, headers=H["supervisor"])
     assert r.status_code == 422 and r.json()["rule_id"] == "CLOSE-1"
     future = (date.today() + timedelta(days=30)).isoformat()
     ev = {"visit_date": future, "facility": "RHU", "record_number": "R-1"}
-    r = client.post(url, json={"closure_reason": "seen", "evidence": ev}, headers=H["coordinator"])
+    r = client.post(url, json={"closure_reason": "seen", "evidence": ev, "sign_off": True}, headers=H["supervisor"])
     assert r.status_code == 422 and r.json()["rule_id"] == "CLOSE-3"
     case = client.get("/api/cases/C-DEMO-04", headers=H["coordinator"]).json()
     appt = case["appointment"]["date"]
     ev = {"visit_date": appt, "facility": "Site A rural health unit", "record_number": "RHU-A 2211"}
-    r = client.post(url, json={"closure_reason": "seen", "evidence": ev}, headers=H["coordinator"])
+    # Evidence without the sign-off, and a coordinator's sign-off, are both refused.
+    r = client.post(url, json={"closure_reason": "seen", "evidence": ev}, headers=H["supervisor"])
+    assert r.status_code == 422 and r.json()["rule_id"] == "CLOSE-1"
+    r = client.post(url, json={"closure_reason": "seen", "evidence": ev, "sign_off": True}, headers=H["coordinator"])
+    assert r.status_code == 422 and r.json()["rule_id"] == "CLOSE-2"
+    r = client.post(url, json={"closure_reason": "seen", "evidence": ev, "sign_off": True}, headers=H["supervisor"])
     assert r.status_code == 200 and r.json()["state"] == "closed"
     assert r.json()["closure_evidence_detail"]["record_number"] == "RHU-A 2211"
+    assert r.json()["signed_off_by"] == "demo-sup-01 (supervisor)"
 
 
 # ------------------------------------------------------------------ demo stories
@@ -187,7 +195,9 @@ def test_story_cases_show_what_they_claim(seeded):
     assert get(5)["state"] == "escalated" and get(5)["lost_contact"]
     assert get(6)["barriers_open"] == ["transport"]
     assert get(7)["state"] == "no_show"
-    assert get(8)["state"] == "closed" and get(8)["signed_off_by"]
+    assert get(8)["state"] == "closed" and get(8)["signed_off_by"] == "demo-sup-01 (supervisor)"
+    assert get(8)["closure_evidence"]
+    assert get(1)["signed_off_by"] == "demo-sup-01 (supervisor)"
     assert any(r["rule_id"] == "PRI-LANGUAGE" for r in get(9)["priority"]["reasons"])
     assert "reminder skipped" in str(client.get("/api/cases/C-DEMO-10/events", headers=H["supervisor"]).json())
     assert get(12)["clinical_urgency"] == "urgent"

@@ -37,6 +37,13 @@ export interface Gate {
   rule_id: string;
 }
 
+export interface AttendanceRisk {
+  level: "none" | "watch" | "high";
+  points: number;
+  excluded?: boolean;
+  reasons: { rule_id: string; points: number; label: string; detail: string | null; help: string }[];
+}
+
 export interface CaseView {
   id: string;
   participant_id: string;
@@ -58,10 +65,12 @@ export interface CaseView {
   synthetic: boolean;
   data_label: string | null;
   updated_at: string | null;
+  version?: number;
   data_quality: string[];
   language?: string;
   barriers_open?: string[];
-  appointment?: { date?: string; clinic?: string } | null;
+  appointment?: { date?: string; clinic?: string; confirmed_by_patient?: string; slot_id?: string; time?: string;
+    simulated?: boolean; fhir?: Record<string, unknown> } | null;
   ladder_steps?: string[];
   priority?: Priority;
   recommended_action?: RecommendedAction;
@@ -80,6 +89,11 @@ export interface CaseView {
   phone_valid?: boolean;
   gates?: Gate[];
   gates_on_hold?: string[];
+  sms_opt_out?: boolean;
+  attendance_risk?: AttendanceRisk;
+  last_sms_reply?: { keyword: string; at: string } | null;
+  source?: { kind: string; resource?: string; code?: string | null; display?: string | null; interpretation?: string;
+    referral?: string; bundle_id?: string | null } | null;
 }
 
 export interface CaseEvent {

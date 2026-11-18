@@ -84,3 +84,20 @@ a.button { display: inline-block; font-size: 16px; padding: 8px 12px; border-rad
 .print table.facts th { width: 30%; }
 .print table.audit td:nth-child(4) { width: 45%; }
 @media print { header, .banner, .noprint { display: none !important; } main { max-width: none; padding: 0; } .kind { border-width: 1px; } }
+.sms.in { align-self: flex-end; background: #2563eb; color: #fff; border-radius: 16px 16px 4px 16px; }
+.sms.in .sms-meta { color: #dbeafe; }
+.phone-reply { display: flex; gap: 6px; padding: 8px 12px 12px; border-top: 1px solid var(--line); background: #fff; flex-wrap: wrap; }
+.phone-reply button { flex: 1; }
+.live { font-size: 12px; color: var(--muted); }
+.live::before { content: "●"; color: #16a34a; margin-right: 4px; }
+.live.paused::before { color: #9ca3af; }
+.tel { display: inline-block; padding: 4px 10px; border: 1px solid #16a34a; border-radius: 6px; color: #166534; text-decoration: none; }
+.slots { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.slot-day { display: flex; flex-direction: column; gap: 4px; min-width: 92px; }
+.slot { font-size: 12px; padding: 3px 6px; }
+.slot.picked { outline: 2px solid #2563eb; background: #dbeafe; }
+.slot.late { border-style: dashed; }
+.badge.risk-watch { background: #fef3c7; color: #92400e; border-color: #f59e0b; }
+.badge.risk-high { background: #fee2e2; color: #991b1b; border-color: #ef4444; }
+.atrisk-list { margin: 0; padding-left: 18px; }
+.atrisk-list li { margin: 4px 0; }

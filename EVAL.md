@@ -4,7 +4,7 @@
 priority points, guard rules, escalation). **What it does not measure:** clinical accuracy or patient outcomes.
 No clinician has reviewed the labels or the pathways, and all cases are fictional.
 
-- Scenarios: [`eval/scenarios.json`](eval/scenarios.json), 55 hand-labeled fictional cases. Labels were written
+- Scenarios: [`eval/scenarios.json`](eval/scenarios.json), 57 hand-labeled fictional cases. Labels were written
   from the README priority table, the pathway JSON triggers and [docs/guard-rules.md](docs/guard-rules.md).
   The same team wrote the code and the labels, so this is a conformance test, not an independent audit.
 - Runner: [`eval/run_eval.py`](eval/run_eval.py). It drives the real FastAPI app over HTTP (TestClient, demo
@@ -26,6 +26,14 @@ positives, 0 false negatives. The first re-run without changes failed 5 cases (G
 gate blocks calls when consent to contact is not recorded and these scenarios had no consent field. We added
 `contact_consent: "yes"` to the scenario defaults (so each case has consent on file, as the scenarios assumed)
 and changed no label. GATE-1 itself is tested in `api/tests/test_gates_and_export.py`, not in this labeled set.
+
+Re-run 2026-11-19 (Manila) on `feedback-v3` after the closing rule changed to evidence **and** a supervisor
+sign-off (CLOSE-1, CLOSE-2): **57 of 57**, 0 false positives, 0 false negatives (routing 13/13, priority 12/12, guard
+28/28, escalation 4/4). Changed scenarios, because the rule they test changed: G02 and G26 now close as the supervisor
+with evidence and a sign-off (G26's evidence is a documented reference to the decline), G04 now sends a sign-off
+without evidence, and G05 is sent by the supervisor so it still tests SM-1. Two scenarios were added: G04b (evidence
+without a sign-off, CLOSE-1) and G04c (a coordinator's sign-off, CLOSE-2). The 12 priority labels and scores are
+unchanged; the drop-off risk rules do not touch priority.
 
 How false positives and negatives are counted:
 - Routing: a false positive marks a case urgent or red-flagged when the label says it is not; a false negative

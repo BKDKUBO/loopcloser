@@ -121,7 +121,10 @@ def run_case(
         action = step.label
         held = False
         if step.id == "reminder":
-            if v.phone_valid and v.contact_consent == "yes":
+            if v.sms_opt_out:
+                held = True
+                action = "Patient replied STOP: SMS reminder held (rule MSG-4), call or visit instead"
+            elif v.phone_valid and v.contact_consent == "yes":
                 lang = v.language if v.language in SUPPORTED_LANGUAGES else "en"
                 cmd.record_notification(
                     repo,

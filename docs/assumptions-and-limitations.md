@@ -102,8 +102,14 @@ blocked if the patient declined contact. Consent is recorded by a staff member w
 inferred. Limits: consent is a yes/no flag with a free-text source, not a signed consent form or a legal
 review of Philippine Data Privacy Act consent requirements; all generated demo rows have consent set to yes
 (SIMULATED), so the gate only holds C-DEMO-14 and real imports without a consent column.
-Closing still needs a coordinator or supervisor, a reason, and structured evidence or a sign-off (CLOSE-1,
-CLOSE-2, CLOSE-3). Red flags pause all automation until a person resolves them (RF-1, RF-2).
+Closing needs a reason, evidence and a supervisor's sign-off (CLOSE-1, CLOSE-2, CLOSE-3; since 2026-11-19 evidence
+*and* sign-off, before evidence *or* sign-off). There is no separate clinician role in the demo: the supervisor stands
+in as the clinical sign-off.
+
+FHIR import, SMS replies, calls and booking (feedback-v3): FHIR R4 Bundles are pasted or loaded from a synthetic
+sample, never fetched from an EHR or a FHIR server; patient SMS replies are simulated with buttons on the mock phone;
+"Call on my phone" only opens the worker's own dialer; appointment slots are simulated (fictional clinics, fixed
+times, 2 places each). The drop-off risk strip is a fixed rule table chosen by the team, not a validated prediction. Red flags pause all automation until a person resolves them (RF-1, RF-2).
 
 ## Other limits already stated in the repo
 

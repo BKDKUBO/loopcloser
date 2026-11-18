@@ -80,6 +80,18 @@ def compute(v: CaseView) -> list[dict[str, Any]]:
             (),
         ),
     ]
+    if v.sms_opt_out:  # rule MSG-4: shown only once the patient has replied STOP
+        gates.append(
+            {
+                "id": "sms_opt_out",
+                "label": "SMS opt-out",
+                "status": "hold",
+                "detail": "The patient replied STOP to an SMS",
+                "missing": "No more SMS to this patient. Call or visit instead, if consent allows.",
+                "blocks": ["sms"],
+                "rule_id": "MSG-4",
+            }
+        )
     return gates
 
 

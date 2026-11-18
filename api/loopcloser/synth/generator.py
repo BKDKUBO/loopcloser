@@ -280,7 +280,8 @@ def _edge_cases(rows: list[dict], anchor: date) -> list[dict]:
 # · (day, "book", actor, appointment_day, clinic) · (day, "message", actor, template_id)
 # · (day, "visit_done", actor) · (day, "no_show", actor) · (day, "declined", actor, reason)
 # · (day, "barrier", actor, barrier) · (day, "red_flag", actor, code)
-# · (day, "close", actor, reason, evidence | None)
+# · (day, "close", actor, reason, evidence | None[, evidence_ref]) — closing needs evidence AND a supervisor
+#   sign-off (rule CLOSE-1/CLOSE-2), so the closer is always "sup".
 # Every story records consent to contact at screening ("consent": "yes") unless it says otherwise
 # ("consent": None means not recorded). · (day, "ladder",) runs the ladder at that point
 # of the day (otherwise it runs after the day's steps).
@@ -295,7 +296,7 @@ DEMO_STORIES: list[dict] = [
         "name": "Nena Bautista",
         "lead": True,
         "proves": "The whole loop: positive FIT, missed call, automatic SMS reminder, community health worker "
-        "visit on Day 7, booking, colonoscopy, closure with structured evidence.",
+        "visit on Day 7, booking, colonoscopy, closure with structured evidence and a supervisor sign-off.",
         "screening_type": "fit",
         "result": "positive",
         "severity": "abnormal",
@@ -318,7 +319,7 @@ DEMO_STORIES: list[dict] = [
             (
                 12,
                 "close",
-                "coord",
+                "sup",
                 "Colonoscopy done; result filed by the hospital",
                 {"visit_day": 11, "facility": "District hospital endoscopy unit (fictional)", "record": "DH-26-0417"},
             ),
@@ -453,7 +454,7 @@ DEMO_STORIES: list[dict] = [
     {
         "n": 8,
         "name": "Danilo Ramos",
-        "proves": "Declined care is recorded, not hidden: closed with a coordinator sign-off and a reason.",
+        "proves": "Declined care is recorded, not hidden: closed with a documented reason and a supervisor sign-off.",
         "screening_type": "generic",
         "result": "abnormal",
         "severity": "abnormal",
@@ -468,7 +469,14 @@ DEMO_STORIES: list[dict] = [
             (2, "call", "coord", "reached"),
             (2, "notified", "coord", "Explained the result and the next step."),
             (3, "declined", "coord", "Will see a private doctor instead"),
-            (4, "close", "coord", "Declined after counselling; will see a private doctor", None),
+            (
+                4,
+                "close",
+                "sup",
+                "Declined after counselling; will see a private doctor",
+                None,
+                "Decline recorded on the day-3 call by demo-coord-01 after counselling",
+            ),
         ],
     },
     {

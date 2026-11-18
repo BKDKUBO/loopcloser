@@ -96,7 +96,8 @@ def _step(repo: CaseRepository, case_id: str, step: tuple, day0: date, now: date
             actor=actor,
             closure_reason=step[3],
             evidence=evidence,
-            sign_off=evidence is None,
+            evidence_ref=step[5] if len(step) > 5 else None,
+            sign_off=True,  # rule CLOSE-1: evidence AND a supervisor sign-off
             now=now,
             today=today,
         )

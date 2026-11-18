@@ -11,8 +11,8 @@ Guard rule ids (also listed in docs/guard-rules.md):
   RF-1    While automation is paused (red flag), automation and system actors cannot act.
   RF-2    Only a human can move a case out of the red-flag states or resume automation.
   ESC-1   Escalate after N failed contact attempts (configurable).
-  CLOSE-1 Closing needs an authorized human, a closure reason, and evidence or sign-off.
-  CLOSE-2 Only coordinator or supervisor can close or sign off.
+  CLOSE-1 Closing needs an authorized human, a closure reason, evidence AND a sign-off.
+  CLOSE-2 Only a supervisor (the clinical sign-off role in this build) can sign off and close.
   CLOSE-3 Structured closure evidence needs a visit date (not in the future, not before the case opened),
           a facility, and a record number.
   GATE-1  Pass/hold gates (domain/gates.py): calls and SMS are blocked while consent to contact or a valid
@@ -30,6 +30,12 @@ Guard rule ids (also listed in docs/guard-rules.md):
   AI-2    No AI drafts while a red flag is open or after a case is closed.
   AI-3    A draft can be used only if every number and date in it was verified against the case record,
           and each draft gets exactly one Use or Discard decision, by a human.
+  APPT-1  Booking from the slot picker needs a slot the simulated schedule offers (weekday, listed time, next 14
+          days). Booking after the pathway deadline is allowed and noted.
+  APPT-2  A simulated slot holds at most its capacity of open booked cases.
+  MSG-4   A patient SMS reply (YES / RESCHED / STOP, simulated in this build) is logged as an event. YES can move a
+          case to Patient notified at most (never Understanding confirmed); RESCHED moves a booked or missed visit
+          to Rescheduled; STOP opts the patient out of SMS at once. Replies never book, close or clear a red flag.
 """
 
 from __future__ import annotations
@@ -143,8 +149,10 @@ def open_case(
     patient_uid: str | None = None,
     synthetic: bool = False,
     barriers: list[str] | None = None,
+    source: dict[str, Any] | None = None,
     now: datetime | None = None,
 ) -> CaseView:
+    """source: where the result came from when it is not the CSV upload, e.g. a FHIR R4 Bundle (provenance only)."""
     if repo.load_events(case_id):
         raise GuardViolation(f"case {case_id} already exists", rule_id="SM-1")
     t = _now(now)
@@ -182,6 +190,7 @@ def open_case(
             "contact_consent": screening.get("contact_consent")
             if screening.get("contact_consent") in CONSENT_VALUES
             else None,
+            **({"source": source} if source else {}),
         },
         rule_id=f"PATHWAY:{pathway.key}",
         fields_used=("screening_type", "result", "severity", "screened_at"),
@@ -238,7 +247,9 @@ def transition(
 
 def _check_transition(v: CaseView, target: CaseState, actor: Actor, payload: dict[str, Any]) -> None:
     if target == CaseState.CLOSED:
-        raise GuardViolation("Use the close command, which needs a reason and evidence or sign-off.", rule_id="CLOSE-1")
+        raise GuardViolation(
+            "Use the close command, which needs a reason, evidence and a supervisor sign-off.", rule_id="CLOSE-1"
+        )
     if target in RED_FLAG_STATES and v.state not in RED_FLAG_STATES:
         raise GuardViolation("Use the red-flag command to enter the red-flag flow.", rule_id="SM-1")
     if not is_allowed(v.state, target):
@@ -282,6 +293,8 @@ def record_notification(
     b = _load(repo, case_id, now)
     v = b.view
     _require_not_paused(v, actor)
+    if channel == "sms" and status in {"queued", "sent"} and v.sms_opt_out:
+        raise GuardViolation("The patient replied STOP. No more SMS to this patient.", rule_id="MSG-4")
     b.add(
         EventType.NOTIFICATION_STATUS,
         actor,
@@ -406,6 +419,7 @@ def resume_automation(
 
 
 EVIDENCE_FIELDS = ("visit_date", "facility", "record_number")
+MIN_EVIDENCE_REF = 5  # a free-text evidence reference shorter than this is not evidence
 _RECORD_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ./_-]{1,39}$")
 
 
@@ -449,11 +463,22 @@ def close_case(
     if not actor.is_human:
         raise GuardViolation("Cases are never closed automatically.", rule_id="CLOSE-1")
     if actor.role not in CLOSE_SIGNOFF_ROLES:
-        raise GuardViolation("Only a coordinator or supervisor can close a case.", rule_id="CLOSE-2")
+        raise GuardViolation(
+            "Only a supervisor can sign off and close a case. Ask your supervisor to review the evidence.",
+            rule_id="CLOSE-2",
+        )
     if not closure_reason:
         raise GuardViolation("A closure reason is required.", rule_id="CLOSE-1")
-    if not evidence_ref and not evidence and not sign_off:
-        raise GuardViolation("Closing needs evidence (visit record or upload) or a sign-off.", rule_id="CLOSE-1")
+    if evidence_ref is not None and len(evidence_ref.strip()) < MIN_EVIDENCE_REF:
+        evidence_ref = None
+    if not evidence_ref and not evidence:
+        raise GuardViolation(
+            "Closing needs evidence: the visit record (date, facility, record number), or for a declined or "
+            "unreachable case a documented reference.",
+            rule_id="CLOSE-1",
+        )
+    if not sign_off:
+        raise GuardViolation("Closing needs evidence and a supervisor sign-off. Tick the sign-off.", rule_id="CLOSE-1")
     b = _load(repo, case_id, now)
     v = b.view
     if not is_allowed(v.state, CaseState.CLOSED):
@@ -472,10 +497,102 @@ def close_case(
             "closure_reason": closure_reason,
             "evidence_ref": evidence_ref,
             "evidence": clean,
-            "signed_off_by": f"{actor.id} ({actor.role.value})" if sign_off else None,
+            "signed_off_by": f"{actor.id} ({actor.role.value})",
         },
         rule_id="CLOSE-3" if clean else "CLOSE-1",
     )
+    return b.commit()
+
+
+def book_appointment(
+    repo: CaseRepository,
+    case_id: str,
+    *,
+    slot_id: str,
+    actor: Actor,
+    today: date,
+    booked_in_slot: int,
+    masked_participant: str,
+    reason: str | None = None,
+    now: datetime | None = None,
+) -> CaseView:
+    """Book a simulated slot (rules APPT-1, APPT-2). Goes through the normal transition guards (SM-1, OWN-1, RF-1)."""
+    from . import scheduling
+
+    if not actor.is_human:
+        raise GuardViolation("Only a person books appointments.", rule_id="AUTO-1")
+    if not scheduling.is_offered(slot_id, today):
+        raise GuardViolation("That slot is not offered. Pick one from the list.", rule_id="APPT-1")
+    if booked_in_slot >= scheduling.CAPACITY:
+        raise GuardViolation("That slot is full. Pick another time.", rule_id="APPT-2")
+    v = repo.get_case(case_id)
+    if v is None:
+        raise NotFound(f"case {case_id} not found")
+    appt = scheduling.appointment(slot_id, case_id=case_id, masked_participant=masked_participant, reason=reason)
+    payload: dict[str, Any] = {"appointment": appt}
+    if v.due_date and date.fromisoformat(appt["date"]) > v.due_date:
+        payload["note"] = f"Booked after the pathway deadline ({v.due_date.isoformat()})"
+    return transition(
+        repo, case_id, CaseState.ACTION_SCHEDULED, actor=actor, payload=payload, now=now, rule_id="APPT-1"
+    )
+
+
+SMS_REPLY_KEYWORDS = ("YES", "RESCHED", "STOP")
+# Who a simulated reply is logged as. The staff member who pressed the button is kept in the payload.
+SIMULATED_PATIENT_PHONE = Actor(id="patient-sms (simulated)", role=Role.PATIENT, kind="human")
+
+
+def record_sms_reply(
+    repo: CaseRepository,
+    case_id: str,
+    *,
+    keyword: str,
+    entered_by: Actor,
+    now: datetime | None = None,
+) -> CaseView:
+    """A patient SMS reply (rule MSG-4). Simulated in this build: the mock phone page posts it.
+
+    YES moves a reviewed case to Patient notified (never Understanding confirmed, rule MSG-1) and marks a booked
+    appointment as confirmed by the patient. RESCHED moves a booked or missed visit to Rescheduled, so a person
+    calls to agree a new date. STOP opts the patient out of SMS at once. While a red flag is open the reply is only
+    logged: a person is handling the case. Replies never book, close, or clear a red flag."""
+    keyword = keyword.strip().upper()
+    if keyword not in SMS_REPLY_KEYWORDS:
+        raise GuardViolation("Reply must be YES, RESCHED or STOP.", rule_id="MSG-4")
+    b = _load(repo, case_id, now)
+    v = b.view
+    if v.state == CaseState.CLOSED:
+        raise GuardViolation("The case is closed.", rule_id="SM-1")
+    sent = [e for e in b.existing if e.type == EventType.NOTIFICATION_STATUS and e.payload.get("status") == "sent"]
+    if not any(e.payload.get("channel") == "sms" for e in sent):
+        raise GuardViolation("No SMS was sent to this patient, so there is nothing to reply to.", rule_id="MSG-4")
+    b.add(
+        EventType.SMS_REPLY_RECEIVED,
+        SIMULATED_PATIENT_PHONE,
+        {"keyword": keyword, "channel": "sms", "simulated": True, "entered_by": entered_by.id},
+        rule_id="MSG-4",
+    )
+    if v.automation_paused or v.state in RED_FLAG_STATES:
+        return b.commit()
+    if keyword == "YES" and v.state == CaseState.REVIEWED:
+        b.add(
+            EventType.STATE_CHANGED,
+            SYSTEM_ACTOR,
+            {"from": v.state.value, "to": CaseState.PATIENT_NOTIFIED.value, "reason": "patient replied YES by SMS"},
+            rule_id="MSG-2",
+        )
+    elif keyword == "RESCHED" and v.state in {CaseState.ACTION_SCHEDULED, CaseState.NO_SHOW}:
+        b.add(
+            EventType.STATE_CHANGED,
+            SYSTEM_ACTOR,
+            {
+                "from": v.state.value,
+                "to": CaseState.RESCHEDULED.value,
+                "reason": "patient replied RESCHED by SMS",
+                "next_action": "Patient asked to reschedule by SMS: call to agree a new date",
+            },
+            rule_id="MSG-4",
+        )
     return b.commit()
 
 

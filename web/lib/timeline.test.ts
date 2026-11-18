@@ -28,4 +28,18 @@ describe("timeline", () => {
   it("never prints the revealed values", () => {
     expect(describeEvent(ev("contact_revealed", { fields: ["name", "phone"] }))).toBe("Showed the patient's name and phone to staff.");
   });
+  it("shows evidence and the supervisor sign-off together", () => {
+    expect(describeEvent(ev("case_closed", { closure_reason: "Declined", evidence_ref: "Decline recorded on the call",
+      signed_off_by: "demo-sup-01 (supervisor)" })))
+      .toBe("Closed: Declined. Evidence: Decline recorded on the call. Signed off by demo-sup-01 (supervisor).");
+  });
+  it("labels simulated patient SMS replies", () => {
+    expect(describeEvent(ev("sms_reply_received", { keyword: "STOP", entered_by: "demo-coord-01" })))
+      .toBe("Patient replied STOP by SMS: no more SMS (opt-out). Simulated reply, entered by demo-coord-01.");
+  });
+  it("marks cases received as a FHIR Bundle", () => {
+    expect(describeEvent(ev("case_opened", { screening_type: "fit", result: "positive", severity: "abnormal",
+      pathway_id: "fit-positive", due_date: "2026-12-01", source: { kind: "fhir_r4_bundle" } })))
+      .toContain("Received as a FHIR R4 Bundle");
+  });
 });

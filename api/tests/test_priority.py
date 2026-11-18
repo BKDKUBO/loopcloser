@@ -115,7 +115,7 @@ def test_language_and_digital_barriers_are_not_logistics(repo, lib, coord):
     assert "PRI-BARRIER" not in {r["rule_id"] for r in prio.compute(v, TODAY).reasons}
 
 
-def test_closed_case_has_no_priority(repo, lib, coord):
+def test_closed_case_has_no_priority(repo, lib, coord, supervisor):
     _open(repo, lib, coord)
     for t, p in [
         (S.REVIEWED, {}),
@@ -125,7 +125,9 @@ def test_closed_case_has_no_priority(repo, lib, coord):
         (S.VISIT_COMPLETED, {}),
     ]:
         cmd.transition(repo, "C-1", t, actor=coord, payload=p, now=NOW)
-    v = cmd.close_case(repo, "C-1", actor=coord, closure_reason="done", evidence_ref="v1", now=NOW)
+    v = cmd.close_case(
+        repo, "C-1", actor=supervisor, closure_reason="done", evidence_ref="visit-1", sign_off=True, now=NOW
+    )
     assert prio.compute(v, TODAY).score == 0
 
 

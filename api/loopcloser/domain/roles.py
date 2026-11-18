@@ -80,8 +80,9 @@ PERMISSIONS: dict[Role, frozenset[Perm]] = {
     Role.SYSTEM: frozenset(),
 }
 
-# Roles allowed to sign off a closure (guard rule CLOSE-2).
-CLOSE_SIGNOFF_ROLES = frozenset({Role.COORDINATOR, Role.SUPERVISOR})
+# Roles allowed to sign off a closure (guard rule CLOSE-2). Closing needs evidence AND this sign-off. The demo has
+# no separate clinician role, so the supervisor is the clinical sign-off. Coordinators prepare the evidence.
+CLOSE_SIGNOFF_ROLES = frozenset({Role.SUPERVISOR})
 
 
 def has_perm(role: Role, perm: Perm) -> bool:

@@ -87,7 +87,14 @@ def index_fields(
         "idx_as_of": today.isoformat(),
         "idx_status": plain_status(v),
         "idx_lost": lost_contact(v),
+        # Simulated slot capacity (domain/scheduling.py): which slot an open, booked case holds.
+        **_slot_fields(v),
     }
+
+
+def _slot_fields(v: CaseView) -> dict[str, str]:
+    sid = (v.appointment or {}).get("slot_id") if v.state == S.ACTION_SCHEDULED else None
+    return {"idx_slot": sid or "", "idx_slot_clinic": sid.split("|", 1)[0] if sid else ""}
 
 
 def sort_key(doc: dict[str, Any]) -> tuple:
