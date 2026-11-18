@@ -26,37 +26,52 @@ import type { CaseEvent, CaseView } from "@/lib/types";
 const OVERRIDE_REASONS = Object.keys(OVERRIDE_REASON_LABELS);
 const BARRIERS = Object.keys(BARRIER_LABELS);
 
+/** Closing needs evidence AND a supervisor's sign-off (rules CLOSE-1, CLOSE-2, CLOSE-3). After a visit the evidence is
+ * the visit record; for a declined or unreachable case it is a documented reference. Coordinators see the same
+ * checklist, so they can prepare the evidence, but only a supervisor can sign off. */
 function CloseWithEvidence({ c, run, busy }: { c: CaseView; run: ReturnType<typeof useCaseAction>["run"]; busy: boolean }) {
+  const s = useSession();
+  const structured = c.state === "visit_completed";
   const [visit, setVisit] = useState(c.appointment?.date ?? "");
   const [facility, setFacility] = useState(c.appointment?.clinic ?? "");
   const [record, setRecord] = useState("");
-  const [reason, setReason] = useState("Visit completed");
-  const missing = [!visit && "visit date", !facility.trim() && "facility", !record.trim() && "record number", !reason.trim() && "reason"]
-    .filter(Boolean) as string[];
+  const [ref, setRef] = useState("");
+  const [reason, setReason] = useState(structured ? "Visit completed" : "");
+  const [signed, setSigned] = useState(false);
+  const isSup = s.role === "supervisor";
+  const missing = [
+    ...(structured
+      ? [!visit && "visit date", !facility.trim() && "facility", !record.trim() && "record number"]
+      : [ref.trim().length < 5 && "evidence reference (what was documented, where)"]),
+    !reason.trim() && "reason",
+    !isSup && "a supervisor's sign-off (switch to Supervisor)",
+    isSup && !signed && "your sign-off (tick the box)",
+  ].filter(Boolean) as string[];
+  const body = structured
+    ? { closure_reason: reason, evidence: { visit_date: visit, facility, record_number: record }, sign_off: signed }
+    : { closure_reason: reason, evidence_ref: ref, sign_off: signed };
   return (
-    <fieldset><legend>Close with evidence</legend>
-      <label>Visit date <input type="date" value={visit} onChange={(e) => setVisit(e.target.value)} required /></label>
-      <label>Facility <input value={facility} onChange={(e) => setFacility(e.target.value)} maxLength={120} required /></label>
-      <label>Record number <input value={record} onChange={(e) => setRecord(e.target.value)} maxLength={40} required
-        placeholder="e.g. RHU-A 2211" /></label>
-      <label>Reason <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} /></label>
-      {missing.length > 0 && <p className="muted">Needed before closing: {missing.join(", ")} (rule CLOSE-1).</p>}
-      <ConfirmButton disabled={busy || missing.length > 0} confirm="Close this case? Closing cannot be undone."
-        onConfirm={() => run(`/api/cases/${c.id}/close`,
-          { closure_reason: reason, evidence: { visit_date: visit, facility, record_number: record } }, undefined, "Closed with evidence.")}>
-        Close with evidence
-      </ConfirmButton>
-    </fieldset>
-  );
-}
-
-function CloseWithSignOff({ c, run, busy }: { c: CaseView; run: ReturnType<typeof useCaseAction>["run"]; busy: boolean }) {
-  const [reason, setReason] = useState("");
-  return (
-    <fieldset><legend>Close with your sign-off</legend>
-      <label>Reason (what the patient decided, what they were told) <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} /></label>
-      <ConfirmButton disabled={busy || !reason.trim()} confirm="Sign off and close? Your name is recorded."
-        onConfirm={() => run(`/api/cases/${c.id}/close`, { closure_reason: reason, sign_off: true }, undefined, "Closed with sign-off.")}>
+    <fieldset><legend>Close: evidence + supervisor sign-off</legend>
+      {structured ? (
+        <>
+          <label>Visit date <input type="date" value={visit} onChange={(e) => setVisit(e.target.value)} required /></label>
+          <label>Facility <input value={facility} onChange={(e) => setFacility(e.target.value)} maxLength={120} required /></label>
+          <label>Record number <input value={record} onChange={(e) => setRecord(e.target.value)} maxLength={40} required
+            placeholder="e.g. RHU-A 2211" /></label>
+        </>
+      ) : (
+        <label>Evidence (what was documented, where) <input value={ref} onChange={(e) => setRef(e.target.value)} maxLength={300}
+          placeholder="e.g. Decline recorded on the 12 Nov call after counselling" /></label>
+      )}
+      <label>Reason {structured ? "" : "(what the patient decided, what they were told) "}
+        <input value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} /></label>
+      {isSup && (
+        <label><input type="checkbox" checked={signed} onChange={(e) => setSigned(e.target.checked)} /> I reviewed the
+          evidence and sign off this closure (my name is recorded)</label>
+      )}
+      {missing.length > 0 && <p className="muted">Needed before closing: {missing.join(", ")} (rules CLOSE-1, CLOSE-2).</p>}
+      <ConfirmButton disabled={busy || missing.length > 0} confirm="Sign off and close this case? Closing cannot be undone."
+        onConfirm={() => run(`/api/cases/${c.id}/close`, body, undefined, "Closed with evidence and your sign-off.")}>
         Sign off and close
       </ConfirmButton>
     </fieldset>
@@ -100,12 +115,10 @@ function NextActionPanel({ c, onChange }: { c: CaseView; onChange: (c: CaseView)
                 onConfirm={() => t("action_scheduled", { appointment: { date, clinic } }, "Appointment booked.")}>Book</ConfirmButton>
             </fieldset>
           )}
-          {ra?.kind === "close" && isLead && (c.state === "visit_completed"
-            ? <CloseWithEvidence c={c} run={run} busy={busy} />
-            : <CloseWithSignOff c={c} run={run} busy={busy} />)}
+          {ra?.kind === "close" && isLead && <CloseWithEvidence c={c} run={run} busy={busy} />}
           {ra?.kind === "consent" && <p className="pending">On hold until consent to contact is recorded. Use
             &quot;Checks before contact&quot; on the left. A home visit is still allowed.</p>}
-          {ra?.kind === "close" && !isLead && <p className="muted">Only a coordinator or supervisor can close a case (rule CLOSE-2).</p>}
+          {ra?.kind === "close" && !isLead && <p className="muted">Closing needs evidence and a supervisor&apos;s sign-off (rules CLOSE-1, CLOSE-2).</p>}
           <hr />
           <CaseActions c={c} onChange={onChange} showRecommended={false}
             extra={<CallPrep caseId={c.id} onLogged={() => onChange(c)} disabledReason={callPrepBlocked} />} />
@@ -237,7 +250,8 @@ function CaseDetail() {
       {c.data_quality.includes("no_owner") && !closed && <p className="error">Nobody owns this case yet. Assign an owner.</p>}
       {closed && (
         <p className="ok"><KindBadge kind="fact" /> Closed: {c.closure_reason}.{" "}
-          {ev ? <>Evidence: visit {ev.visit_date} at {ev.facility}, record {ev.record_number}.</> : c.signed_off_by ? <>Signed off by {c.signed_off_by}.</> : c.closure_evidence}</p>
+          {ev ? <>Evidence: visit {ev.visit_date} at {ev.facility}, record {ev.record_number}.</> : c.closure_evidence ? <>Evidence: {c.closure_evidence}.</> : null}
+          {c.signed_off_by && <> Signed off by {c.signed_off_by}.</>}</p>
       )}
       <div className="detail">
         <div>

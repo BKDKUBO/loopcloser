@@ -420,18 +420,19 @@
   {
    "id": "G02",
    "category": "guard",
-   "note": "Coordinator closes after the visit with evidence",
+   "note": "Supervisor closes after the visit with evidence and a sign-off",
    "open": {
     "screening_type": "fit",
     "result": "positive"
    },
    "advance": "visit_completed",
    "step": {
-    "as": "coordinator",
+    "as": "supervisor",
     "path": "/close",
     "body": {
      "closure_reason": "visit_completed",
-     "evidence_ref": "visit-note-123"
+     "evidence_ref": "visit-note-123",
+     "sign_off": true
     }
    },
    "label": {
@@ -463,7 +464,51 @@
   {
    "id": "G04",
    "category": "guard",
-   "note": "Closing without evidence or sign-off is refused (CLOSE-1)",
+   "note": "Closing with a sign-off but no evidence is refused (CLOSE-1)",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "visit_completed",
+   "step": {
+    "as": "supervisor",
+    "path": "/close",
+    "body": {
+     "closure_reason": "visit_completed",
+     "sign_off": true
+    }
+   },
+   "label": {
+    "decision": "block",
+    "rule_id": "CLOSE-1"
+   }
+  },
+  {
+   "id": "G04b",
+   "category": "guard",
+   "note": "Closing with evidence but no sign-off is refused (CLOSE-1)",
+   "open": {
+    "screening_type": "fit",
+    "result": "positive"
+   },
+   "advance": "visit_completed",
+   "step": {
+    "as": "supervisor",
+    "path": "/close",
+    "body": {
+     "closure_reason": "visit_completed",
+     "evidence_ref": "visit-note-123"
+    }
+   },
+   "label": {
+    "decision": "block",
+    "rule_id": "CLOSE-1"
+   }
+  },
+  {
+   "id": "G04c",
+   "category": "guard",
+   "note": "A coordinator cannot sign off a closure (CLOSE-2)",
    "open": {
     "screening_type": "fit",
     "result": "positive"
@@ -473,12 +518,14 @@
     "as": "coordinator",
     "path": "/close",
     "body": {
-     "closure_reason": "visit_completed"
+     "closure_reason": "visit_completed",
+     "evidence_ref": "visit-note-123",
+     "sign_off": true
     }
    },
    "label": {
     "decision": "block",
-    "rule_id": "CLOSE-1"
+    "rule_id": "CLOSE-2"
    }
   },
   {
@@ -490,11 +537,12 @@
     "result": "positive"
    },
    "step": {
-    "as": "coordinator",
+    "as": "supervisor",
     "path": "/close",
     "body": {
      "closure_reason": "other",
-     "evidence_ref": "x"
+     "evidence_ref": "visit-note-1",
+     "sign_off": true
     }
    },
    "label": {
@@ -950,7 +998,7 @@
   {
    "id": "G26",
    "category": "guard",
-   "note": "Coordinator closes a declined case with sign-off",
+   "note": "Supervisor closes a declined case with a documented reference and sign-off",
    "open": {
     "screening_type": "fit",
     "result": "positive"
@@ -967,10 +1015,11 @@
     }
    ],
    "step": {
-    "as": "coordinator",
+    "as": "supervisor",
     "path": "/close",
     "body": {
      "closure_reason": "declined",
+     "evidence_ref": "Decline recorded on the call after counselling",
      "sign_off": true
     }
    },

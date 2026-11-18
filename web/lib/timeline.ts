@@ -34,8 +34,9 @@ export function describeEvent(e: CaseEvent): string {
     case "case_closed": {
       const ev = p.evidence as { visit_date: string; facility: string; record_number: string } | null | undefined;
       const proof = ev ? `Evidence: visit ${ev.visit_date} at ${ev.facility}, record ${ev.record_number}.`
-        : p.signed_off_by ? `Signed off by ${str(p.signed_off_by)}.` : p.evidence_ref ? `Evidence: ${str(p.evidence_ref)}.` : "";
-      return `Closed: ${str(p.closure_reason)}. ${proof}`;
+        : p.evidence_ref ? `Evidence: ${str(p.evidence_ref)}.` : "";
+      const sign = p.signed_off_by ? ` Signed off by ${str(p.signed_off_by)}.` : "";
+      return `Closed: ${str(p.closure_reason)}. ${proof}${sign}`.replace(/\s+$/, "");
     }
     case "barrier_reported":
       return `Barrier: ${label(BARRIER_LABELS, str(p.barrier))}.`;

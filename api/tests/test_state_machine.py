@@ -32,13 +32,16 @@ def test_open_case_uses_pathway_and_deadline(repo, lib, coord):
     assert str(v.due_date) == "2026-11-09"  # screened + 30 day configurable default
 
 
-def test_happy_path_to_close_with_evidence(repo, lib, coord):
+def test_happy_path_to_close_with_evidence(repo, lib, coord, supervisor):
     _open(repo, lib, coord)
     _walk_to(
         repo, coord, S.REVIEWED, S.PATIENT_NOTIFIED, S.UNDERSTANDING_CONFIRMED, S.ACTION_SCHEDULED, S.VISIT_COMPLETED
     )
-    v = cmd.close_case(repo, "C-1", actor=coord, closure_reason="care completed", evidence_ref="visit:V-9", now=NOW)
+    v = cmd.close_case(
+        repo, "C-1", actor=supervisor, closure_reason="care completed", evidence_ref="visit:V-9", sign_off=True, now=NOW
+    )
     assert v.state == S.CLOSED and v.closure_evidence == "visit:V-9"
+    assert v.signed_off_by == "sup-01 (supervisor)"
     assert len(repo.load_events("C-1")) == 7
 
 
@@ -59,17 +62,43 @@ def test_transition_cannot_close(repo, lib, coord):
     assert e.value.rule_id == "CLOSE-1"
 
 
-def test_close_needs_reason_and_evidence_or_signoff(repo, lib, coord):
+def test_close_needs_reason_evidence_and_signoff(repo, lib, coord, supervisor):
+    """Rule CLOSE-1: evidence AND a sign-off. Either alone is refused."""
     _open(repo, lib, coord)
     _walk_to(
         repo, coord, S.REVIEWED, S.PATIENT_NOTIFIED, S.UNDERSTANDING_CONFIRMED, S.ACTION_SCHEDULED, S.VISIT_COMPLETED
     )
+    for kw in (
+        {},
+        {"sign_off": True},  # sign-off without evidence
+        {"evidence_ref": "visit:V-9"},  # evidence without sign-off
+        {"evidence_ref": "v", "sign_off": True},  # a one-letter reference is not evidence
+    ):
+        with pytest.raises(GuardViolation) as e:
+            cmd.close_case(repo, "C-1", actor=supervisor, closure_reason="done", now=NOW, **kw)
+        assert e.value.rule_id == "CLOSE-1", kw
     with pytest.raises(GuardViolation):
-        cmd.close_case(repo, "C-1", actor=coord, closure_reason="done", now=NOW)
-    with pytest.raises(GuardViolation):
-        cmd.close_case(repo, "C-1", actor=coord, closure_reason="", sign_off=True, now=NOW)
-    v = cmd.close_case(repo, "C-1", actor=coord, closure_reason="done", sign_off=True, now=NOW)
-    assert v.signed_off_by == "coord-01 (coordinator)"
+        cmd.close_case(
+            repo, "C-1", actor=supervisor, closure_reason="", evidence_ref="visit:V-9", sign_off=True, now=NOW
+        )
+    assert repo.get_case("C-1").state == S.VISIT_COMPLETED
+    v = cmd.close_case(
+        repo, "C-1", actor=supervisor, closure_reason="done", evidence_ref="visit:V-9", sign_off=True, now=NOW
+    )
+    assert v.signed_off_by == "sup-01 (supervisor)" and v.closure_evidence == "visit:V-9"
+
+
+def test_coordinator_cannot_sign_off_a_closure(repo, lib, coord):
+    """Rule CLOSE-2: the supervisor is the clinical sign-off. A coordinator prepares the evidence."""
+    _open(repo, lib, coord)
+    _walk_to(
+        repo, coord, S.REVIEWED, S.PATIENT_NOTIFIED, S.UNDERSTANDING_CONFIRMED, S.ACTION_SCHEDULED, S.VISIT_COMPLETED
+    )
+    with pytest.raises(GuardViolation) as e:
+        cmd.close_case(
+            repo, "C-1", actor=coord, closure_reason="done", evidence_ref="visit:V-9", sign_off=True, now=NOW
+        )
+    assert e.value.rule_id == "CLOSE-2"
 
 
 def test_worker_and_automation_cannot_close(repo, lib, coord, worker):

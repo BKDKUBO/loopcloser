@@ -11,8 +11,8 @@ Guard rule ids (also listed in docs/guard-rules.md):
   RF-1    While automation is paused (red flag), automation and system actors cannot act.
   RF-2    Only a human can move a case out of the red-flag states or resume automation.
   ESC-1   Escalate after N failed contact attempts (configurable).
-  CLOSE-1 Closing needs an authorized human, a closure reason, and evidence or sign-off.
-  CLOSE-2 Only coordinator or supervisor can close or sign off.
+  CLOSE-1 Closing needs an authorized human, a closure reason, evidence AND a sign-off.
+  CLOSE-2 Only a supervisor (the clinical sign-off role in this build) can sign off and close.
   CLOSE-3 Structured closure evidence needs a visit date (not in the future, not before the case opened),
           a facility, and a record number.
   GATE-1  Pass/hold gates (domain/gates.py): calls and SMS are blocked while consent to contact or a valid
@@ -30,6 +30,9 @@ Guard rule ids (also listed in docs/guard-rules.md):
   AI-2    No AI drafts while a red flag is open or after a case is closed.
   AI-3    A draft can be used only if every number and date in it was verified against the case record,
           and each draft gets exactly one Use or Discard decision, by a human.
+  MSG-4   A patient SMS reply (YES / RESCHED / STOP, simulated in this build) is logged as an event. YES can move a
+          case to Patient notified at most (never Understanding confirmed); RESCHED moves a booked or missed visit
+          to Rescheduled; STOP opts the patient out of SMS at once. Replies never book, close or clear a red flag.
 """
 
 from __future__ import annotations
@@ -238,7 +241,9 @@ def transition(
 
 def _check_transition(v: CaseView, target: CaseState, actor: Actor, payload: dict[str, Any]) -> None:
     if target == CaseState.CLOSED:
-        raise GuardViolation("Use the close command, which needs a reason and evidence or sign-off.", rule_id="CLOSE-1")
+        raise GuardViolation(
+            "Use the close command, which needs a reason, evidence and a supervisor sign-off.", rule_id="CLOSE-1"
+        )
     if target in RED_FLAG_STATES and v.state not in RED_FLAG_STATES:
         raise GuardViolation("Use the red-flag command to enter the red-flag flow.", rule_id="SM-1")
     if not is_allowed(v.state, target):
@@ -406,6 +411,7 @@ def resume_automation(
 
 
 EVIDENCE_FIELDS = ("visit_date", "facility", "record_number")
+MIN_EVIDENCE_REF = 5  # a free-text evidence reference shorter than this is not evidence
 _RECORD_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ./_-]{1,39}$")
 
 
@@ -449,11 +455,22 @@ def close_case(
     if not actor.is_human:
         raise GuardViolation("Cases are never closed automatically.", rule_id="CLOSE-1")
     if actor.role not in CLOSE_SIGNOFF_ROLES:
-        raise GuardViolation("Only a coordinator or supervisor can close a case.", rule_id="CLOSE-2")
+        raise GuardViolation(
+            "Only a supervisor can sign off and close a case. Ask your supervisor to review the evidence.",
+            rule_id="CLOSE-2",
+        )
     if not closure_reason:
         raise GuardViolation("A closure reason is required.", rule_id="CLOSE-1")
-    if not evidence_ref and not evidence and not sign_off:
-        raise GuardViolation("Closing needs evidence (visit record or upload) or a sign-off.", rule_id="CLOSE-1")
+    if evidence_ref is not None and len(evidence_ref.strip()) < MIN_EVIDENCE_REF:
+        evidence_ref = None
+    if not evidence_ref and not evidence:
+        raise GuardViolation(
+            "Closing needs evidence: the visit record (date, facility, record number), or for a declined or "
+            "unreachable case a documented reference.",
+            rule_id="CLOSE-1",
+        )
+    if not sign_off:
+        raise GuardViolation("Closing needs evidence and a supervisor sign-off. Tick the sign-off.", rule_id="CLOSE-1")
     b = _load(repo, case_id, now)
     v = b.view
     if not is_allowed(v.state, CaseState.CLOSED):
@@ -472,7 +489,7 @@ def close_case(
             "closure_reason": closure_reason,
             "evidence_ref": evidence_ref,
             "evidence": clean,
-            "signed_off_by": f"{actor.id} ({actor.role.value})" if sign_off else None,
+            "signed_off_by": f"{actor.id} ({actor.role.value})",
         },
         rule_id="CLOSE-3" if clean else "CLOSE-1",
     )
