@@ -146,8 +146,10 @@ def open_case(
     patient_uid: str | None = None,
     synthetic: bool = False,
     barriers: list[str] | None = None,
+    source: dict[str, Any] | None = None,
     now: datetime | None = None,
 ) -> CaseView:
+    """source: where the result came from when it is not the CSV upload, e.g. a FHIR R4 Bundle (provenance only)."""
     if repo.load_events(case_id):
         raise GuardViolation(f"case {case_id} already exists", rule_id="SM-1")
     t = _now(now)
@@ -185,6 +187,7 @@ def open_case(
             "contact_consent": screening.get("contact_consent")
             if screening.get("contact_consent") in CONSENT_VALUES
             else None,
+            **({"source": source} if source else {}),
         },
         rule_id=f"PATHWAY:{pathway.key}",
         fields_used=("screening_type", "result", "severity", "screened_at"),
@@ -287,6 +290,8 @@ def record_notification(
     b = _load(repo, case_id, now)
     v = b.view
     _require_not_paused(v, actor)
+    if channel == "sms" and status in {"queued", "sent"} and v.sms_opt_out:
+        raise GuardViolation("The patient replied STOP. No more SMS to this patient.", rule_id="MSG-4")
     b.add(
         EventType.NOTIFICATION_STATUS,
         actor,
@@ -493,6 +498,65 @@ def close_case(
         },
         rule_id="CLOSE-3" if clean else "CLOSE-1",
     )
+    return b.commit()
+
+
+SMS_REPLY_KEYWORDS = ("YES", "RESCHED", "STOP")
+# Who a simulated reply is logged as. The staff member who pressed the button is kept in the payload.
+SIMULATED_PATIENT_PHONE = Actor(id="patient-sms (simulated)", role=Role.PATIENT, kind="human")
+
+
+def record_sms_reply(
+    repo: CaseRepository,
+    case_id: str,
+    *,
+    keyword: str,
+    entered_by: Actor,
+    now: datetime | None = None,
+) -> CaseView:
+    """A patient SMS reply (rule MSG-4). Simulated in this build: the mock phone page posts it.
+
+    YES moves a reviewed case to Patient notified (never Understanding confirmed, rule MSG-1) and marks a booked
+    appointment as confirmed by the patient. RESCHED moves a booked or missed visit to Rescheduled, so a person
+    calls to agree a new date. STOP opts the patient out of SMS at once. While a red flag is open the reply is only
+    logged: a person is handling the case. Replies never book, close, or clear a red flag."""
+    keyword = keyword.strip().upper()
+    if keyword not in SMS_REPLY_KEYWORDS:
+        raise GuardViolation("Reply must be YES, RESCHED or STOP.", rule_id="MSG-4")
+    b = _load(repo, case_id, now)
+    v = b.view
+    if v.state == CaseState.CLOSED:
+        raise GuardViolation("The case is closed.", rule_id="SM-1")
+    sent = [e for e in b.existing if e.type == EventType.NOTIFICATION_STATUS and e.payload.get("status") == "sent"]
+    if not any(e.payload.get("channel") == "sms" for e in sent):
+        raise GuardViolation("No SMS was sent to this patient, so there is nothing to reply to.", rule_id="MSG-4")
+    b.add(
+        EventType.SMS_REPLY_RECEIVED,
+        SIMULATED_PATIENT_PHONE,
+        {"keyword": keyword, "channel": "sms", "simulated": True, "entered_by": entered_by.id},
+        rule_id="MSG-4",
+    )
+    if v.automation_paused or v.state in RED_FLAG_STATES:
+        return b.commit()
+    if keyword == "YES" and v.state == CaseState.REVIEWED:
+        b.add(
+            EventType.STATE_CHANGED,
+            SYSTEM_ACTOR,
+            {"from": v.state.value, "to": CaseState.PATIENT_NOTIFIED.value, "reason": "patient replied YES by SMS"},
+            rule_id="MSG-2",
+        )
+    elif keyword == "RESCHED" and v.state in {CaseState.ACTION_SCHEDULED, CaseState.NO_SHOW}:
+        b.add(
+            EventType.STATE_CHANGED,
+            SYSTEM_ACTOR,
+            {
+                "from": v.state.value,
+                "to": CaseState.RESCHEDULED.value,
+                "reason": "patient replied RESCHED by SMS",
+                "next_action": "Patient asked to reschedule by SMS: call to agree a new date",
+            },
+            rule_id="MSG-4",
+        )
     return b.commit()
 
 

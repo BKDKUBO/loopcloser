@@ -49,6 +49,9 @@ class CaseView(BaseModel):
     phone_valid: bool = True
     # Consent to be contacted: "yes", "no", or None (not recorded). From the upload or a staff entry, never AI.
     contact_consent: str | None = None
+    # The patient replied STOP to an SMS: no more SMS (rule MSG-4). Calls and visits follow the consent gate.
+    sms_opt_out: bool = False
+    last_sms_reply: dict[str, Any] | None = None  # {"keyword", "at"} of the newest patient SMS reply
     barriers_open: list[str] = Field(default_factory=list)
     no_show_count: int = 0
     reached_contacts: int = 0
@@ -63,6 +66,7 @@ class CaseView(BaseModel):
     patient_uid: str | None = None  # Firebase uid of the patient, when linked. Used by Firestore rules.
     synthetic: bool = False
     data_label: str | None = None  # "SIMULATED" for generated data
+    source: dict[str, Any] | None = None  # provenance when not the CSV upload, e.g. {"kind": "fhir_r4_bundle", ...}
     opened_at: datetime | None = None
     updated_at: datetime | None = None
     version: int = 0  # seq of the last applied event
@@ -99,6 +103,7 @@ def _apply(view: CaseView | None, ev: Event) -> CaseView:
             contact_consent=p.get("contact_consent"),
             synthetic=bool(p.get("synthetic", False)),
             data_label=p.get("data_label"),
+            source=p.get("source"),
             opened_at=ev.at,
             updated_at=ev.at,
             version=ev.seq,
@@ -168,6 +173,12 @@ def _apply(view: CaseView | None, ev: Event) -> CaseView:
         )
     elif ev.type == EventType.CONSENT_RECORDED:
         v.contact_consent = p["consent"]
+    elif ev.type == EventType.SMS_REPLY_RECEIVED:
+        v.last_sms_reply = {"keyword": p["keyword"], "at": ev.at.isoformat()}
+        if p["keyword"] == "STOP":
+            v.sms_opt_out = True
+        if p["keyword"] == "YES" and v.appointment and v.state == CaseState.ACTION_SCHEDULED:
+            v.appointment = {**v.appointment, "confirmed_by_patient": ev.at.isoformat()}
     elif ev.type == EventType.LADDER_STEP:
         if p["step"] not in v.ladder_steps:
             v.ladder_steps.append(p["step"])

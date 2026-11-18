@@ -1,0 +1,314 @@
+"""feedback-v3: FHIR R4 Bundle import, simulated patient SMS replies (MSG-4), and the auto-refresh change counter."""
+
+import json
+from datetime import date, timedelta
+
+import pytest
+from fastapi.testclient import TestClient
+
+from loopcloser.domain import commands as cmd
+from loopcloser.domain import gates
+from loopcloser.domain import ladder as ladder_mod
+from loopcloser.domain.errors import GuardViolation
+from loopcloser.domain.states import CaseState as S
+from loopcloser.fhir import importer as fhir
+from loopcloser.main import create_app
+from loopcloser.store.memory import MemoryRepository
+
+from .conftest import NOW, screening
+
+H = {
+    r: {"x-demo-role": r, "x-demo-user": u}
+    for r, u in [
+        ("coordinator", "demo-coord-01"),
+        ("worker", "demo-worker-01"),
+        ("supervisor", "demo-sup-01"),
+        ("program_manager", "demo-pm-01"),
+        ("patient", "demo-patient-01"),
+    ]
+}
+TODAY = date(2026, 10, 17)
+
+
+@pytest.fixture
+def client(make_cfg):
+    cfg = make_cfg(
+        APP_ENV="test", DEMO_MODE="true", RATE_LIMIT_PER_MINUTE="50000", RATE_LIMIT_SENSITIVE_PER_MINUTE="5000"
+    )
+    return TestClient(create_app(cfg, MemoryRepository()))
+
+
+# ------------------------------------------------------------------ FHIR mapping
+
+
+@pytest.mark.parametrize(
+    "kind,stype,result", [("fit", "fit", "positive"), ("cervical", "cervical", "positive"), ("bp", "bp", "elevated")]
+)
+def test_sample_bundles_map_to_one_case_each(kind, stype, result):
+    plan = fhir.plan_import(fhir.sample_bundle(kind, today=TODAY, seed="AB12"), today=TODAY)
+    assert plan.synthetic and not plan.warnings
+    assert len(plan.items) == 1  # the Observation inside the report is not a second case
+    m = plan.items[0]
+    assert m.status == "ready" and m.resource.startswith("DiagnosticReport/")
+    assert m.screening["screening_type"] == stype and m.screening["result"] == result
+    assert m.screening["contact_consent"] is None  # never inferred (GATE-1)
+    assert m.screening["participant_id"] == "FHIR-SIM-AB12" and m.screening["phone_valid"]
+    assert m.screening["language"] == "fil" and m.referral
+    dumped = json.dumps(m.screening) + json.dumps(m.source)
+    assert "SIMULATED Patient" not in dumped and "+639000199999" not in dumped  # no name or phone kept
+
+
+def _bundle(**obs_overrides):
+    b = fhir.sample_bundle("fit", today=TODAY, seed="X1")
+    b["entry"] = [e for e in b["entry"] if e["resource"]["resourceType"] in {"Patient", "Observation"}]
+    obs = next(e["resource"] for e in b["entry"] if e["resource"]["resourceType"] == "Observation")
+    for k, v in obs_overrides.items():
+        if v is None:
+            obs.pop(k, None)
+        else:
+            obs[k] = v
+    return b
+
+
+def test_fhir_rules_for_status_interpretation_and_dates():
+    def one(**kw):
+        return fhir.plan_import(_bundle(**kw), today=TODAY).items[0]
+
+    assert one().status == "ready"  # a lone Observation is imported too
+    assert one(status="preliminary").status == "skipped"
+    neg = [{"coding": [{"system": fhir.V3_INTERP, "code": "NEG"}]}]
+    assert one(interpretation=neg).status == "skipped"
+    m = one(interpretation=None)
+    assert m.status == "error" and "does not interpret raw values" in m.messages[0]
+    assert one(effectiveDateTime=(TODAY + timedelta(days=3)).isoformat()).status == "error"
+    crit = [{"coding": [{"system": fhir.V3_INTERP, "code": "HH"}]}]
+    assert one(interpretation=crit).screening["severity"] == "critical"
+    other = {"coding": [{"system": fhir.LOINC, "code": "2345-7", "display": "Glucose"}]}
+    m = one(code=other)
+    assert (
+        m.status == "ready" and m.screening["screening_type"] == "generic" and "not in the LOINC table" in m.messages[0]
+    )
+
+
+@pytest.mark.parametrize(
+    "bad,msg",
+    [
+        ({"resourceType": "Patient"}, "Bundle"),
+        ({"resourceType": "Bundle", "type": "nonsense", "entry": []}, "Bundle.type"),
+        ({"resourceType": "Bundle", "type": "collection", "entry": []}, "no entries"),
+        (
+            {"resourceType": "Bundle", "type": "collection", "entry": [{"resource": {"resourceType": "Patient"}}]},
+            "Observation or DiagnosticReport",
+        ),
+    ],
+)
+def test_unreadable_bundles_are_refused(bad, msg):
+    with pytest.raises(fhir.BundleError) as e:
+        fhir.plan_import(bad, today=TODAY)
+    assert msg in str(e.value)
+
+
+def test_untagged_bundle_warns_and_is_not_synthetic():
+    b = _bundle()
+    b.pop("meta")
+    plan = fhir.plan_import(b, today=TODAY)
+    assert not plan.synthetic and "synthetic" in plan.warnings[0]
+
+
+# ------------------------------------------------------------------ FHIR API
+
+
+def test_fhir_import_api_opens_a_case_with_consent_on_hold(client):
+    sample = client.get("/api/fhir/sample?kind=fit", headers=H["coordinator"]).json()
+    r = client.post("/api/fhir/import/validate", json=sample, headers=H["coordinator"])
+    assert r.status_code == 200 and r.json()["items"][0]["status"] == "ready"
+    r = client.post("/api/fhir/import", json={"bundle": sample}, headers=H["coordinator"])
+    assert r.status_code == 200, r.text
+    body = r.json()
+    case = body["opened"][0]
+    assert case["state"] == "new_result" and case["screening_type"] == "fit" and case["contact_consent"] is None
+    assert case["source"]["kind"] == "fhir_r4_bundle" and case["source"]["code"] == "LOINC 29771-3"
+    assert case["data_label"] == "SIMULATED" and "consent" in case["gates_on_hold"]
+    # Calls and SMS hold until a person records consent.
+    r = client.post(
+        f"/api/cases/{case['id']}/contact-attempts",
+        json={"channel": "call", "result": "reached"},
+        headers=H["coordinator"],
+    )
+    assert r.status_code == 422 and r.json()["rule_id"] == "GATE-1"
+    # Importing the same Bundle again opens nothing.
+    again = client.post("/api/fhir/import", json=sample, headers=H["coordinator"]).json()
+    assert again["opened"] == [] and again["items"][0]["status"] == "skipped"
+    events = client.get(f"/api/cases/{case['id']}/events", headers=H["supervisor"]).text
+    assert "SIMULATED Patient" not in events and "+639000199999" not in events
+
+
+def test_fhir_routes_are_coordinator_and_supervisor_only(client):
+    sample = client.get("/api/fhir/sample", headers=H["supervisor"]).json()
+    for role in ("worker", "program_manager", "patient"):
+        assert client.get("/api/fhir/sample", headers=H[role]).status_code == 403
+        assert client.post("/api/fhir/import", json=sample, headers=H[role]).status_code == 403
+        assert client.post("/api/fhir/import/validate", json=sample, headers=H[role]).status_code == 403
+
+
+def test_fhir_api_errors_are_clear(client):
+    r = client.post("/api/fhir/import", content=b"{not json", headers=H["coordinator"])
+    assert r.status_code == 422 and "JSON" in r.json()["detail"]
+    r = client.post("/api/fhir/import", json={"resourceType": "Patient"}, headers=H["coordinator"])
+    assert r.status_code == 422 and "Bundle" in r.json()["detail"]
+    big = b'{"resourceType":"Bundle","pad":"' + b"x" * (fhir.MAX_BYTES + 1) + b'"}'
+    assert client.post("/api/fhir/import", content=big, headers=H["coordinator"]).status_code == 413
+    assert client.get("/api/fhir/sample?kind=xray", headers=H["coordinator"]).status_code == 400
+
+
+# ------------------------------------------------------------------ SMS replies (MSG-4)
+
+
+def _texted(repo, lib, coord, *, to=S.REVIEWED):
+    pw = lib.match("fit", "positive", "abnormal")
+    cmd.open_case(repo, case_id="C-1", screening=screening(), pathway=pw, actor=coord, owner="worker-01", now=NOW)
+    cmd.transition(repo, "C-1", S.REVIEWED, actor=coord, now=NOW)
+    cmd.record_notification(
+        repo,
+        "C-1",
+        status="sent",
+        channel="sms",
+        template_id="result-notice",
+        template_version="1.0.0",
+        language="en",
+        actor=coord,
+        now=NOW,
+    )
+    path = [
+        (S.PATIENT_NOTIFIED, {}),
+        (S.UNDERSTANDING_CONFIRMED, {"source": "staff_confirmed"}),
+        (S.ACTION_SCHEDULED, {"appointment": {"date": "2026-10-25", "clinic": "Site A"}}),
+    ]
+    for target, payload in path:
+        if repo.get_case("C-1").state == to:
+            break
+        cmd.transition(repo, "C-1", target, actor=coord, payload=payload, now=NOW)
+    return repo.get_case("C-1")
+
+
+def test_yes_notifies_but_never_confirms_understanding(repo, lib, coord):
+    _texted(repo, lib, coord)
+    v = cmd.record_sms_reply(repo, "C-1", keyword="yes", entered_by=coord, now=NOW)
+    assert v.state == S.PATIENT_NOTIFIED and v.last_sms_reply["keyword"] == "YES"  # MSG-1: not understood
+    ev = [e for e in repo.load_events("C-1") if e.type.value == "sms_reply_received"][0]
+    assert (
+        ev.actor.id == "patient-sms (simulated)" and ev.payload["entered_by"] == "coord-01" and ev.payload["simulated"]
+    )
+
+
+def test_yes_confirms_a_booked_appointment(repo, lib, coord):
+    _texted(repo, lib, coord, to=S.ACTION_SCHEDULED)
+    v = cmd.record_sms_reply(repo, "C-1", keyword="YES", entered_by=coord, now=NOW)
+    assert v.state == S.ACTION_SCHEDULED and v.appointment["confirmed_by_patient"]
+
+
+def test_resched_moves_a_booking_to_rescheduled(repo, lib, coord):
+    _texted(repo, lib, coord, to=S.ACTION_SCHEDULED)
+    v = cmd.record_sms_reply(repo, "C-1", keyword="RESCHED", entered_by=coord, now=NOW)
+    assert v.state == S.RESCHEDULED and "reschedule" in v.next_action.lower()
+
+
+def test_stop_opts_out_of_sms_and_is_respected(repo, lib, coord):
+    _texted(repo, lib, coord)
+    v = cmd.record_sms_reply(repo, "C-1", keyword="STOP", entered_by=coord, now=NOW)
+    assert v.sms_opt_out and v.state == S.REVIEWED
+    gate = next(g for g in gates.compute(v) if g["id"] == "sms_opt_out")
+    assert gate["status"] == "hold" and gate["blocks"] == ["sms"]
+    assert gates.blocking(v, "sms") and not any(g["id"] == "sms_opt_out" for g in gates.blocking(v, "call"))
+    with pytest.raises(GuardViolation) as e:
+        cmd.record_notification(
+            repo,
+            "C-1",
+            status="sent",
+            channel="sms",
+            template_id="reminder",
+            template_version="1.0.0",
+            language="en",
+            actor=coord,
+            now=NOW,
+        )
+    assert e.value.rule_id == "MSG-4"
+    # The automatic SMS reminder is held, not sent.
+    ladder_mod.run_case(repo, "C-1", today=TODAY + timedelta(days=10), now=NOW)
+    sent = [e for e in repo.load_events("C-1") if e.type.value == "notification_status"]
+    assert len(sent) == 1
+    assert "reminder" in repo.get_case("C-1").ladder_held
+
+
+def test_replies_need_a_text_and_an_open_case(repo, lib, coord):
+    pw = lib.match("fit", "positive", "abnormal")
+    cmd.open_case(repo, case_id="C-2", screening=screening(), pathway=pw, actor=coord, owner="w", now=NOW)
+    with pytest.raises(GuardViolation) as e:
+        cmd.record_sms_reply(repo, "C-2", keyword="YES", entered_by=coord, now=NOW)
+    assert e.value.rule_id == "MSG-4"
+    _texted(repo, lib, coord)
+    with pytest.raises(GuardViolation):
+        cmd.record_sms_reply(repo, "C-1", keyword="MAYBE", entered_by=coord, now=NOW)
+
+
+def test_red_flag_case_only_logs_the_reply(repo, lib, coord):
+    _texted(repo, lib, coord, to=S.ACTION_SCHEDULED)
+    cmd.report_red_flag(repo, "C-1", actor=coord, source="staff", code="severe_headache", now=NOW)
+    before = repo.get_case("C-1").state
+    v = cmd.record_sms_reply(repo, "C-1", keyword="RESCHED", entered_by=coord, now=NOW)
+    assert v.state == before and v.red_flag_open
+
+
+def test_sms_reply_api_and_outbox(client):
+    c = {
+        "case_id": "C-9",
+        "participant_id": "P-000009",
+        "screening_id": "S-9",
+        "screening_type": "fit",
+        "result": "positive",
+        "severity": "abnormal",
+        "screened_at": "2026-10-10",
+        "owner": "demo-worker-01",
+        "contact_consent": "yes",
+    }
+    assert client.post("/api/cases", json=c, headers=H["coordinator"]).status_code == 201
+    client.post("/api/cases/C-9/transition", json={"target": "reviewed"}, headers=H["coordinator"])
+    r = client.post("/api/cases/C-9/sms-replies", json={"keyword": "YES"}, headers=H["coordinator"])
+    assert r.status_code == 422 and r.json()["rule_id"] == "MSG-4"  # nothing was texted yet
+    body = {"template_id": "result-notice", "language": "en", "channel": "sms"}
+    assert client.post("/api/cases/C-9/messages", json=body, headers=H["coordinator"]).status_code == 200
+    assert (
+        client.post("/api/cases/C-9/sms-replies", json={"keyword": "NO"}, headers=H["coordinator"]).status_code == 422
+    )
+    assert (
+        client.post("/api/cases/C-9/sms-replies", json={"keyword": "YES"}, headers=H["program_manager"]).status_code
+        == 403
+    )
+    r = client.post("/api/cases/C-9/sms-replies", json={"keyword": "STOP"}, headers=H["worker"])
+    assert r.status_code == 200 and r.json()["sms_opt_out"]
+    assert "sms_opt_out" in r.json()["gates_on_hold"]
+    r = client.post("/api/cases/C-9/messages", json=body, headers=H["coordinator"])
+    assert r.status_code == 422 and r.json()["rule_id"] in {"GATE-1", "MSG-4"}
+    o = client.get("/api/cases/C-9/outbox", headers=H["coordinator"]).json()
+    assert [m["direction"] for m in o["messages"]] == ["out", "in"] and o["messages"][1]["text"] == "STOP"
+    assert o["sms_opt_out"] and o["can_reply"]
+
+
+def test_sms_replies_are_demo_only(make_cfg):
+    cfg = make_cfg(APP_ENV="test", DEMO_MODE="false", RATE_LIMIT_PER_MINUTE="5000")
+    c = TestClient(create_app(cfg, MemoryRepository()))
+    r = c.post("/api/cases/C-1/sms-replies", json={"keyword": "YES"}, headers=H["coordinator"])
+    assert r.status_code in {401, 403}
+
+
+# ------------------------------------------------------------------ auto-refresh counter
+
+
+def test_changes_counter_moves_on_writes_only(client):
+    v0 = client.get("/api/changes", headers=H["worker"]).json()["version"]
+    client.get("/api/today", headers=H["coordinator"])
+    assert client.get("/api/changes", headers=H["worker"]).json()["version"] == v0
+    sample = client.get("/api/fhir/sample", headers=H["coordinator"]).json()
+    client.post("/api/fhir/import", json=sample, headers=H["coordinator"])
+    assert client.get("/api/changes", headers=H["worker"]).json()["version"] != v0
+    assert client.get("/api/changes").status_code == 401

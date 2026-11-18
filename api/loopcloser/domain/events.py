@@ -56,6 +56,8 @@ class EventType(StrEnum):
     CONSENT_RECORDED = "consent_recorded"
     # Staff downloaded the case summary or audit trail (rule PRIV-2). Audit only: never changes the case.
     CASE_EXPORTED = "case_exported"
+    # The patient replied to an SMS with a keyword (YES / RESCHED / STOP). Simulated in this build (rule MSG-4).
+    SMS_REPLY_RECEIVED = "sms_reply_received"
 
 
 class Event(BaseModel):
