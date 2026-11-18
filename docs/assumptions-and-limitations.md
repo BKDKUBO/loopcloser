@@ -113,9 +113,8 @@ times, 2 places each). The drop-off risk strip is a fixed rule table chosen by t
 
 ## Other limits already stated in the repo
 
-- The live site at https://loopcloser-bkdkubo.web.app still runs the earlier build until `finalist-v2` is
-  merged and redeployed (which has not been approved). The 14-story demo path and the v2 screenshots describe
-  this branch, run locally.
+- The live site at https://loopcloser-bkdkubo.web.app runs `main` (deployed 2026-11-19 Manila, including the
+  feedback-v3 changes); its demo data was reset and reseeded that day.
 - Default Cloud Run scale is min 0, max 1, so the first request after a quiet period can take about 7 to 10
   seconds (measured cold starts in EVAL.md: 10.2 s and 6.9 s).
 - Gemini 3.8 Flash is called on Vertex AI's `global` location, so draft requests may be processed outside

@@ -44,8 +44,8 @@ pass/hold checks; people review, contact and close. The case page labels every p
 
 ### Demo path: 14 scripted patients (no sign-in)
 
-> This path is for the `finalist-v2` build. The live site still runs the earlier build until it is redeployed
-> after the early review; locally: `make api`, `make web`, `make seed`. Every patient below is **SIMULATED**.
+> The live site runs this build (`main` at `e9f5f94`, deployed 2026-11-19 Manila); locally: `make api`, `make web`,
+> `make seed`. Every patient below is **SIMULATED**.
 
 The seed adds 14 hand-written stories (`api/loopcloser/synth/generator.py`, `DEMO_STORIES`) on top of 1,000
 generated patients. Each story is replayed through the same commands the app uses (`synth/stories.py`), so its
@@ -127,7 +127,7 @@ and this documentation. The 14 scripted demo stories and the click path are in
 [docs/screenshots/v2/](docs/screenshots/v2/) (18 images, including Today, the lead case with closure evidence,
 blocked close and contact reveal, Prepare for the call, a red-flag case, CSV import, the program dashboard,
 the patient's phone, content labels and pass/hold checks (16), the missing-information case on hold (15),
-the AI-written label on a call guide (17, offline template locally) and the printable summary (18)). The live site still runs the earlier build until `finalist-v2` is redeployed.
+the AI-written label on a call guide (17, offline template locally) and the printable summary (18)). The live site runs this build since 2026-11-19 (Manila).
 
 ### 4. Responsible AI, safety and data governance
 
