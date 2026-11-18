@@ -11,7 +11,8 @@ export function describeEvent(e: CaseEvent): string {
   const p = e.payload;
   switch (e.type) {
     case "case_opened":
-      return `${label(SCREENING_LABELS, str(p.screening_type))} result (${words(str(p.result))}, ${str(p.severity)}) opened on pathway ${str(p.pathway_id)}. Deadline ${str(p.due_date)}.`;
+      return `${label(SCREENING_LABELS, str(p.screening_type))} result (${words(str(p.result))}, ${str(p.severity)}) opened on pathway ${str(p.pathway_id)}. Deadline ${str(p.due_date)}.${
+        (p.source as { kind?: string } | undefined)?.kind === "fhir_r4_bundle" ? " Received as a FHIR R4 Bundle (no live EHR)." : ""}`;
     case "owner_assigned":
       return [p.owner && `Owner: ${str(p.owner)}`, p.backup_owner && `backup: ${str(p.backup_owner)}`,
         p.clinician_reviewer && `clinician reviewer: ${str(p.clinician_reviewer)}`].filter(Boolean).join(", ") + ".";
@@ -56,6 +57,11 @@ export function describeEvent(e: CaseEvent): string {
       return `Consent to contact recorded: ${p.consent === "yes" ? "yes" : "no"} (${str(p.source)}).`;
     case "case_exported":
       return `Downloaded the ${p.kind === "summary" ? "case summary" : p.kind === "audit_csv" ? "audit trail (CSV)" : "audit trail (JSON)"}.`;
+    case "sms_reply_received": {
+      const k = str(p.keyword);
+      const what = k === "STOP" ? "no more SMS (opt-out)" : k === "RESCHED" ? "asks for a new date" : "confirms";
+      return `Patient replied ${k} by SMS: ${what}. Simulated reply, entered by ${str(p.entered_by)}.`;
+    }
     case "contact_revealed":
       return `Showed the patient's ${(p.fields as string[] | undefined)?.join(" and ") ?? "contact details"} to staff.`;
     default:

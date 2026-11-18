@@ -7,7 +7,9 @@ import { useSession } from "@/lib/auth";
 const STAFF = new Set(["worker", "coordinator", "supervisor"]);
 
 /** Name and phone stay hidden until a staff member clicks. The API logs each reveal as an event (rule PRIV-1). */
-export function RevealContact({ caseId, synthetic, onLogged }: { caseId: string; synthetic: boolean; onLogged: () => void }) {
+export function RevealContact({ caseId, synthetic, onLogged, callHold }: {
+  caseId: string; synthetic: boolean; onLogged: () => void; callHold?: string | null;
+}) {
   const s = useSession();
   const [shown, setShown] = useState<{ name?: string; phone?: string } | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -32,6 +34,11 @@ export function RevealContact({ caseId, synthetic, onLogged }: { caseId: string;
       {shown ? (
         <span><strong>{shown.name || "No name on file"}</strong> · {shown.phone || "no valid phone"}{" "}
           <span className="muted">(fictional · this view was logged)</span>{" "}
+          {shown.phone && (callHold
+            ? <span className="pending">Call on hold: {callHold} (rule GATE-1)</span>
+            : <><a className="tel" href={`tel:${shown.phone.replace(/[^+\d]/g, "")}`}
+              title="Opens the phone app on your own phone or computer. LoopCloser places no call itself.">Call on my phone</a>{" "}
+              <span className="muted small">then log the result under Contact.</span></>)}{" "}
           <button onClick={() => setShown(null)}>Hide</button></span>
       ) : (
         <button disabled={busy} onClick={reveal} aria-describedby="reveal-note">Show name and phone</button>

@@ -61,7 +61,7 @@ export interface CaseView {
   data_quality: string[];
   language?: string;
   barriers_open?: string[];
-  appointment?: { date?: string; clinic?: string } | null;
+  appointment?: { date?: string; clinic?: string; confirmed_by_patient?: string; slot_id?: string; time?: string } | null;
   ladder_steps?: string[];
   priority?: Priority;
   recommended_action?: RecommendedAction;
@@ -80,6 +80,10 @@ export interface CaseView {
   phone_valid?: boolean;
   gates?: Gate[];
   gates_on_hold?: string[];
+  sms_opt_out?: boolean;
+  last_sms_reply?: { keyword: string; at: string } | null;
+  source?: { kind: string; resource?: string; code?: string | null; display?: string | null; interpretation?: string;
+    referral?: string; bundle_id?: string | null } | null;
 }
 
 export interface CaseEvent {

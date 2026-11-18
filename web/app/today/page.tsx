@@ -7,6 +7,7 @@ import { PriorityBadge, WhyPriority } from "@/components/Priority";
 import { RequireRole } from "@/components/RequireRole";
 import { api } from "@/lib/api";
 import { useSession } from "@/lib/auth";
+import { liveText, useAutoRefresh } from "@/lib/useAutoRefresh";
 import { LANE_LABELS, type Lane } from "@/lib/lanes";
 import { SCREENING_LABELS, dueText, label, ownerLabel, summarySentence, type Summary } from "@/lib/labels";
 import type { CaseView } from "@/lib/types";
@@ -62,11 +63,12 @@ function Today() {
   const canMine = s.role !== null && STAFF_WITH_CASES.has(s.role) && s.role !== "worker";
 
   const qs = `per_lane=${PER_LANE}${mine ? "&mine=true" : ""}${type ? `&screening_type=${type}` : ""}`;
-  const load = useCallback(async () => {
-    try { setErr(null); setData(await api<TodayResponse>(`/api/today?${qs}`, await s.headers())); }
-    catch (e) { setErr((e as Error).message); }
+  const load = useCallback(async (silent = false) => {
+    try { setData(await api<TodayResponse>(`/api/today?${qs}`, await s.headers())); setErr(null); }
+    catch (e) { if (!silent) setErr((e as Error).message); }
   }, [s, qs]);
   useEffect(() => { load(); }, [load]);
+  const live = useAutoRefresh(() => load(true));
 
   const replace = (c: CaseView) => {
     setFound((f) => f && f.map((x) => (x.id === c.id ? c : x)));
@@ -114,6 +116,7 @@ function Today() {
   return (
     <>
       <h1>Today <span className="muted">({data.today})</span></h1>
+      <p className={`live ${live.visible ? "" : "paused"}`}>{liveText(live.visible, live.checkedAt)}</p>
       <p className="notice" role="note">Demo data: every patient, name and phone number here is fictional (SIMULATED).
         No real SMS is ever sent.</p>
       <p className="summary" aria-live="polite"><strong>{summarySentence(data.summary)}</strong>{" "}

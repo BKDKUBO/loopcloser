@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { ConfirmButton } from "@/components/ConfirmButton";
 import { RequireRole } from "@/components/RequireRole";
@@ -45,6 +46,7 @@ function Import() {
         Each imported row opens a case through the same rules as the API. <strong>Use fictional data only in this demo.</strong>{" "}
         Names and phone numbers in a real file are not stored by this build.</p>
       <p className="muted small">Columns: {COLUMNS}. UTF-8, 5 MB at most.</p>
+      <p className="small">Have a lab result as a FHIR R4 Bundle instead? <Link href="/fhir">Import FHIR</Link>.</p>
       <div className="row">
         <input type="file" accept=".csv,text/csv" aria-label="CSV file" onChange={async (e) => {
           const f = e.target.files?.[0]; if (!f) return;

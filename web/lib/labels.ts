@@ -99,6 +99,7 @@ export function actorLabel(a: { id: string; role: string; kind: string }): strin
   if (a.kind === "automation") return "Automatic (escalation ladder)";
   if (a.kind === "system" || a.role === "system") return "Automatic (rules engine)";
   if (a.id === "demo-seed-history") return "Demo history (simulated)";
+  if (a.id === "patient-sms (simulated)") return "Patient, by SMS (simulated)";
   return `${a.id} (${ROLE_LABELS[a.role] ?? words(a.role)})`;
 }
 

@@ -21,6 +21,7 @@ import {
 import { eventKind } from "@/lib/kinds";
 import { describeEvent } from "@/lib/timeline";
 import { useCaseAction } from "@/lib/useCaseAction";
+import { liveText, useAutoRefresh } from "@/lib/useAutoRefresh";
 import type { CaseEvent, CaseView } from "@/lib/types";
 
 const OVERRIDE_REASONS = Object.keys(OVERRIDE_REASON_LABELS);
@@ -207,15 +208,16 @@ function CaseDetail() {
   const [events, setEvents] = useState<CaseEvent[]>([]);
   const [err, setErr] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!id) return;
     const h = await s.headers();
     try {
       setC(await api<CaseView>(`/api/cases/${encodeURIComponent(id)}`, h));
       if (s.role !== "patient") setEvents(await api<CaseEvent[]>(`/api/cases/${encodeURIComponent(id)}/events`, h));
-    } catch (e) { setErr((e as Error).message); }
+    } catch (e) { if (!silent) setErr((e as Error).message); }
   }, [id, s]);
   useEffect(() => { load(); }, [load]);
+  const live = useAutoRefresh(() => load(true), Boolean(id));
   const changed = () => { load(); };
 
   if (!id) return <p>No case selected.</p>;
@@ -224,10 +226,16 @@ function CaseDetail() {
   const closed = c.state === "closed";
   const overdue = (c.days_to_due ?? 0) < 0 && !closed && c.plain_status !== "done";
   const ev = c.closure_evidence_detail;
+  const holds = c.gates_on_hold ?? [];
+  const callHold = c.contact_consent === "no" ? "the patient declined contact"
+    : holds.includes("consent") ? "consent to contact not recorded"
+    : holds.includes("contact_details") ? "no valid phone number" : null;
+  const src = c.source;
   return (
     <>
       <h1>Case {c.id} <span className="muted">· {c.participant_id}</span></h1>
-      <p><RevealContact caseId={c.id} synthetic={c.synthetic} onLogged={changed} /></p>
+      <p className={`live ${live.visible ? "" : "paused"}`}>{liveText(live.visible, live.checkedAt)}</p>
+      <p><RevealContact caseId={c.id} synthetic={c.synthetic} onLogged={changed} callHold={callHold} /></p>
       <KindLegend />
       <p>
         <KindBadge kind="rule" />
@@ -242,9 +250,18 @@ function CaseDetail() {
         <span className="badge">Owner: {ownerLabel(c.owner)}</span>
         <span className="badge">Consent to contact: {c.contact_consent === "yes" ? "yes" : c.contact_consent === "no" ? "declined" : "not recorded"}</span>
         <span className="badge">Phone: {c.phone_valid === false ? "none valid" : "on file"}</span>
+        {c.sms_opt_out && <span className="badge urgent" title="Rule MSG-4">SMS: patient replied STOP</span>}
+        {c.last_sms_reply && !c.sms_opt_out && <span className="badge">Last SMS reply: {c.last_sms_reply.keyword} (simulated)</span>}
+        {c.appointment?.confirmed_by_patient && c.state === "action_scheduled" && <span className="badge">Appointment confirmed by the patient (SMS YES)</span>}
       </p>
+      {src?.kind === "fhir_r4_bundle" && (
+        <p className="small"><KindBadge kind="fact" /> <strong>Received as a FHIR R4 Bundle</strong> (pasted or sample, no live EHR):{" "}
+          <code>{src.resource}</code>{src.code ? <> · {src.code}{src.display ? ` (${src.display})` : ""}</> : null}
+          {src.interpretation ? <> · lab interpretation {src.interpretation}</> : null}
+          {src.referral ? <> · referral in the bundle: {src.referral}</> : null}</p>
+      )}
       <p className="muted">{label(SCREENING_LABELS, c.screening_type)} · status in detail: {label(STATE_LABELS, c.state)} ·
-        {" "}<span className="pending">pathway {c.pathway_id} v{c.pathway_version}, pending clinical sign-off</span> · fictional (SIMULATED) case ·
+        {" "}<span className="pending">pathway {c.pathway_id} v{c.pathway_version}, pending clinical sign-off</span> · {c.synthetic ? "fictional (SIMULATED) case" : "not tagged synthetic"} ·
         {" "}<Link href={`/phone?id=${encodeURIComponent(c.id)}`}>See the patient&apos;s phone (simulated SMS)</Link></p>
       {c.red_flag_open && <p className="error">Red flag open. Automation is paused until a person resolves it.</p>}
       {c.data_quality.includes("no_owner") && !closed && <p className="error">Nobody owns this case yet. Assign an owner.</p>}

@@ -281,7 +281,7 @@ def create_app(
 
     # Auto-refresh: a counter of successful writes on this instance, bumped by the middleware below. Pages poll
     # GET /api/changes (no database read) and reload only when it moves. The demo runs one instance (max 1);
-    # with more, a page still reloads on its own every 2 minutes.
+    # with more, a page still reloads on its own every 5 minutes.
     changes: dict[str, Any] = {"boot": uuid.uuid4().hex[:8], "n": 0}
 
     @app.middleware("http")
