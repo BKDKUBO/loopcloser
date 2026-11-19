@@ -87,6 +87,7 @@ function FhirImport() {
       {checked && (
         <section aria-labelledby="res">
           <h2 id="res">{checked.opened ? "Imported" : "Check result"}</h2>
+          <p className="pending"><strong>Screening result for follow-up, not a diagnosis.</strong></p>
           {checked.warnings.map((w) => <p key={w} className="pending">{w}</p>)}
           {checked.opened && checked.opened.length > 0 && (
             <p className="ok" role="status">Opened {checked.opened.map((c, i) => (

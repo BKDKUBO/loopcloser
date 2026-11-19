@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from "react";
+import { loadDemoMode } from "./publicConfig";
 import type { Role } from "./types";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "";
@@ -39,11 +40,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let unsub = () => {};
     (async () => {
-      let demo = false;
-      try {
-        const cfg = await fetch(`${API}/api/public-config`).then((r) => r.json());
-        demo = Boolean(cfg.demo_mode);
-      } catch { /* API down: treat as non-demo */ }
+      // null = API did not answer in time or errored: treat as non-demo (the sign-in page then asks to reload).
+      const demo = (await loadDemoMode(`${API}/api/public-config`)) ?? false;
       setDemoMode(demo);
       const stored = demo ? (localStorage.getItem("lc_demo_role") as Role | null) : null;
       if (!demo) localStorage.removeItem("lc_demo_role");
