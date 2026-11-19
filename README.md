@@ -33,8 +33,6 @@ pass/hold checks; people review, contact and close. The case page labels every p
 | | |
 |---|---|
 | **Live demo** | https://loopcloser-bkdkubo.web.app (no sign-in needed: use Demo mode) |
-| **Video (under 3 min)** | ⚠️ PLACEHOLDER: video link to be added by the team |
-| **Pitch deck** | ⚠️ PLACEHOLDER: deck link to be added by the team |
 | **Measured results** | [EVAL.md](EVAL.md): 57 of 57 labeled synthetic cases follow the published rules, 0 false positives, 0 false negatives |
 | **Judging criteria** | [How LoopCloser meets the judging criteria](#how-loopcloser-meets-the-judging-criteria) |
 | **Assumptions and limitations** | [Assumptions and limitations](#assumptions-and-limitations); fuller notes in [docs/assumptions-and-limitations.md](docs/assumptions-and-limitations.md) |
@@ -44,14 +42,14 @@ pass/hold checks; people review, contact and close. The case page labels every p
 
 ### Demo path: 14 scripted patients (no sign-in)
 
-> The live site runs this build (`main` at `e9f5f94`, deployed 2026-11-19 Manila); locally: `make api`, `make web`,
+> The live site runs the latest `main` (deployed 2026-11-20 Manila); locally: `make api`, `make web`,
 > `make seed`. Every patient below is **SIMULATED**.
 
 The seed adds 14 hand-written stories (`api/loopcloser/synth/generator.py`, `DEMO_STORIES`) on top of 1,000
 generated patients. Each story is replayed through the same commands the app uses (`synth/stories.py`), so its
 timeline is real events, not pasted text. Type the case id into **Find a case** on Today, or open `/case?id=...`.
 
-1. **Lead story: C-DEMO-01, Nena Bautista, positive FIT.** Sign in as **Coordinator (demo)** and open C-DEMO-01.
+1. **Lead story: C-DEMO-01, Nena Bautista, positive FIT.** Sign in as **Coordinator** (demo role, no password) and open C-DEMO-01.
    The readable timeline shows the whole loop: result reviewed, first call missed on Day 2, automatic SMS
    reminder on Day 4, the ladder's community health worker step and a home visit on Day 7, colonoscopy booked on
    Day 8, visit completed on Day 11, closed on Day 12 with structured evidence (visit date, facility, record
@@ -115,19 +113,18 @@ Measured results in [EVAL.md](EVAL.md): 57 of 57 labeled synthetic cases follow 
 positives, 0 false negatives), including guard rules 28/28. The same eval includes a ladder-on vs ladder-off
 comparison on 1,019 synthetic cases (targets written in commit `d908191` before the run): T1 unaccountable and
 T2 silently overdue both went to 0; T3 (177 unowned) and T4 (355 overdue) were unchanged, as targeted; T5 missed
-(see [Assumptions and limitations](#assumptions-and-limitations)). API tests on this branch: 154 passed, 3
-skipped (they need the Firestore emulator, which needs Java); web tests: 18 passed; `make test`.
+(see [Assumptions and limitations](#assumptions-and-limitations)). API tests: 182 passed, 4 skipped (the
+skipped ones need the Firestore emulator, which needs Java; CI runs them), the same in Manila time and UTC; web
+tests: 24 passed; `make test`.
 
 ### 3. Working solution and demonstration quality
 
-Live demo: https://loopcloser-bkdkubo.web.app (Demo mode, no sign-in). A demo video is still a placeholder in
-this README and the deck; the official submission pack for 20 November asks for one, along with the live link
-and this documentation. The 14 scripted demo stories and the click path are in
+Live demo: https://loopcloser-bkdkubo.web.app (Demo mode, no sign-in). The 14 scripted demo stories and the click path are in
 [Demo path](#demo-path-14-scripted-patients-no-sign-in). Screenshots of that path:
 [docs/screenshots/v2/](docs/screenshots/v2/) (18 images, including Today, the lead case with closure evidence,
 blocked close and contact reveal, Prepare for the call, a red-flag case, CSV import, the program dashboard,
 the patient's phone, content labels and pass/hold checks (16), the missing-information case on hold (15),
-the AI-written label on a call guide (17, offline template locally) and the printable summary (18)). The live site runs this build since 2026-11-19 (Manila).
+the AI-written label on a call guide (17, offline template locally) and the printable summary (18)). The live site runs the latest `main` since 2026-11-20 (Manila).
 
 ### 4. Responsible AI, safety and data governance
 
@@ -209,6 +206,37 @@ Fuller write-up: [docs/assumptions-and-limitations.md](docs/assumptions-and-limi
 - The labeled eval is a conformance test against our own rules, not clinical accuracy. We do not claim improved
   outcomes.
 
+### FHIR R4 import: what it reads
+
+The import on `/fhir` reads one pasted **FHIR R4 `Bundle`** (JSON; `Bundle.type` collection, transaction, batch,
+message, searchset or document; at most 50 entries) and calls no FHIR server (`api/loopcloser/fhir/importer.py`).
+
+| Resource type | What is read |
+|---|---|
+| `Bundle` | `type`, `entry`, and `meta.tag` (a synthetic / SIMULATED tag; without it the check warns) |
+| `Patient` (required) | `identifier` (or `id`) as the pseudonymous participant id; a phone number only sets "phone on file". Names, phone numbers and addresses are not stored |
+| `Observation` | `status` (only final, amended, corrected), `subject`, LOINC `code`, `interpretation`, `effectiveDateTime` / `issued` |
+| `DiagnosticReport` | the same fields plus `conclusionCode` and its `result` Observations (read for code and interpretation) |
+| `ServiceRequest` (optional) | `code.text` or `code.coding.display`, shown as the referral |
+
+At least one `Observation` or `DiagnosticReport` is required. **Every other resource type is ignored** and named in
+a warning ("Ignored resource types: ..."), for example `Encounter`, `Practitioner`, `Organization`, `Specimen`,
+`Condition` or `Consent`. Consent to contact is never read from a Bundle. Raw values are never interpreted: the
+lab's interpretation code decides, and the result is shown as "Screening result for follow-up, not a diagnosis."
+
+### What production would need
+
+None of these exist in this build; they are what a real deployment would require:
+
+- **An SMS gateway** with real keys, a sender ID, and an inbound webhook for patient replies (today sending and
+  replies are simulated).
+- **A health-records connection** (EHR, lab system or FHIR server) with credentials and data-sharing agreements
+  with each facility (today a Bundle is pasted or a synthetic sample is loaded).
+- **Ethics and data-protection approval** for handling real patient data (for example under the Philippine Data
+  Privacy Act), including the facility's consent process.
+- **Clinician review** of every pathway, patient-message template and the sign-off roles, and a real clinician
+  role for closing cases (today a supervisor signs off).
+
 ## The problem
 
 Screening only helps if an abnormal result leads to care, and in the Philippines that step is often where people
@@ -230,9 +258,6 @@ to a shared tracking sheet: *"Because we were using manual reporting, some women
 no longer knew what happened to them after referral."* (published interview,
 [Balikas News Network](https://balikas.net/from-paper-based-to-real-time-care-how-paranaque-city-strengthened-progress-to-eliminate-cervical-cancer/);
 she is not a LoopCloser user).
-
-> ⚠️ PLACEHOLDER, team to supply: a quote from a nurse, barangay health worker or patient we spoke to ourselves,
-> with their role and permission to quote. Do not invent one.
 
 **Who uses LoopCloser:** the nurse or coordinator at a rural health unit who has a stack of abnormal results and
 no way to see which patients have been reached, booked, or lost. LoopCloser gives each result an owner and a
@@ -323,15 +348,6 @@ the habit of keeping each project in its own Google Cloud project. **New for thi
 to screening follow-up: the case state machine and event log, pathways, guard rules, priority points, escalation
 ladder, templates, synthetic cohort, eval, and all screens. The first commit added 90 files at once, so git
 history alone cannot show which files, if any, were adapted from earlier code.
-
-> ⚠️ PLACEHOLDER, Manuel to confirm: which files (if any) were adapted from InvoiceSentinel, for example the
-> Dockerfile, deploy scripts or auth middleware. Only list what is true.
-
-## Why queues and escalation
-
-> ⚠️ PLACEHOLDER, Manuel to write in his own words: how his background in collections (working overdue accounts:
-> owner per account, next action and date, contact attempts logged, escalation when nobody acts) shaped
-> LoopCloser's Today queue and escalation ladder. Do not add details he has not confirmed.
 
 ## Beyond the Philippines
 

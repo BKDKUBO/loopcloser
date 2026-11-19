@@ -264,7 +264,8 @@ function CaseDetail() {
         <p className="small"><KindBadge kind="fact" /> <strong>Received as a FHIR R4 Bundle</strong> (pasted or sample, no live EHR):{" "}
           <code>{src.resource}</code>{src.code ? <> · {src.code}{src.display ? ` (${src.display})` : ""}</> : null}
           {src.interpretation ? <> · lab interpretation {src.interpretation}</> : null}
-          {src.referral ? <> · referral in the bundle: {src.referral}</> : null}</p>
+          {src.referral ? <> · referral in the bundle: {src.referral}</> : null}
+          {" "}· <strong>Screening result for follow-up, not a diagnosis.</strong></p>
       )}
       <p className="muted">{label(SCREENING_LABELS, c.screening_type)} · status in detail: {label(STATE_LABELS, c.state)} ·
         {" "}<span className="pending">pathway {c.pathway_id} v{c.pathway_version}, pending clinical sign-off</span> · {c.synthetic ? "fictional (SIMULATED) case" : "not tagged synthetic"} ·
