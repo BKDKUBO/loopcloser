@@ -9,8 +9,8 @@ export function SafetyLine({ pathway, collapsed = false }: { pathway?: string; c
           fired is listed with its points.</li>
         <li><strong>People act.</strong> Every status change in the timeline shows who made it and which rule
           allowed it. Automation can only escalate or ask for human review.</li>
-        <li><strong>A coordinator or supervisor closes</strong> a case, with a reason and evidence or a
-          sign-off. Nothing closes automatically.</li>
+        <li><strong>A supervisor closes</strong> a case, with a reason, evidence <em>and</em> a sign-off (rules
+          CLOSE-1, CLOSE-2); coordinators prepare the evidence. Nothing closes automatically.</li>
         <li><strong>Red flags stop automation</strong> until a person resolves them, and only a supervisor
           can turn it back on.</li>
         <li><strong>AI only drafts, for staff.</strong> The optional call guide is labeled, checked number by number
